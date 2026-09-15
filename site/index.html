@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>London residential completions</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar"><div class="shell topbar-inner"><a class="brand" href="."><span class="brand-mark">L</span><span>London Data Store<small>Residential completions</small></span></a><a class="source-link" href="https://data.london.gov.uk/dataset/residential-completions-dashboard-e196j" target="_blank" rel="noreferrer">About this data ↗</a></div></header>
+  <main class="shell">
+    <section id="status" class="status" hidden></section>
+    <section class="intro"><p class="eyebrow">Housing monitoring</p><h1>Residential completions</h1><p>Explore net self-contained housing completions across London, compared with London Plan targets.</p></section>
+    <section class="controls" aria-label="Dashboard filters">
+      <div class="control"><label for="authority">Planning authority</label><select id="authority"><option value="all">All London</option></select></div>
+      <div class="control"><label for="fromYear">From financial year</label><select id="fromYear"></select></div>
+      <div class="control"><label for="toYear">To financial year</label><select id="toYear"></select></div>
+      <div class="control"><label for="affordability">Affordability</label><select id="affordability"><option value="all">All categories</option></select></div>
+      <button id="clear" class="button secondary">Clear filters</button>
+    </section>
+    <section class="metrics" aria-label="Summary"><article><span>Completions</span><strong id="total">—</strong><small id="period">Selected period</small></article><article><span>Target</span><strong id="target">—</strong><small>London Plan target</small></article><article><span>Against target</span><strong id="percent">—</strong><small>Completions as a percentage</small></article><article><span>Years shown</span><strong id="years">—</strong><small>Financial years</small></article></section>
+    <section class="grid"><article class="panel wide"><div class="panel-heading"><div><p class="eyebrow">Progress</p><h2>Completions against target</h2></div><span class="legend"><i class="dot blue"></i>Completions <i class="dot orange"></i>Target</span></div><div id="completion-chart" class="chart" aria-label="Completions and target chart"></div></article><article class="panel"><p class="eyebrow">Breakdown</p><h2>Affordability</h2><div id="affordability-chart" class="bars"></div></article><article class="panel"><p class="eyebrow">Housing mix</p><h2>Dwelling type</h2><div id="dwelling-chart" class="bars"></div></article></section>
+    <section class="panel table-panel"><div class="panel-heading"><div><p class="eyebrow">Records</p><h2>Completion sites</h2></div><div class="table-actions"><input id="search" type="search" placeholder="Search address or authority" aria-label="Search records"><button id="download" class="button secondary">Download CSV</button></div></div><div class="table-wrap"><table><thead><tr><th>Site / address</th><th>Authority</th><th>Financial year</th><th>Units</th><th>Units LP2021</th><th>Affordability</th></tr></thead><tbody id="records"></tbody></table></div><p id="record-count" class="muted"></p></section>
+    <footer><span>Source: Planning London Datahub</span><span id="updated">Data date unavailable</span><a href="https://www.london.gov.uk/programmes-strategies/planning/digital-planning/planning-london-datahub" target="_blank" rel="noreferrer">Methodology and source ↗</a></footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
