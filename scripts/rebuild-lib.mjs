@@ -76,65 +76,92 @@ export function parsePldDate(raw) {
   return { raw_date: raw, parsed_date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, date_status: 'valid' };
 }
 
+// Single-hit version, so a caller can stream one source record in at a time
+// (build-data.mjs does this) instead of holding every hit in memory.
+export function normaliseHit(hit) {
+  const application = hit._source || hit;
+  const identity = sourceApplicationIdentity(hit);
+  if (!identity.application_id) throw new Error('Source hit has no application identifier');
+  const applicationId = identity.application_id;
+  const rootCommencement = parsePldDate(application.actual_commencement_date);
+  const rootCompletion = parsePldDate(application.actual_completion_date);
+  const residential = application.application_details?.residential_details || {};
+  const sourceUnits = Array.isArray(residential.residential_units) ? residential.residential_units : [];
+  const appRecord = { application_id: applicationId, elasticsearch_id: identity.elasticsearch_id, source_id: identity.source_id, hit_id: identity.hit_id, identifier_conflict: identity.conflicting_identifiers, lpa_app_no: application.lpa_app_no || null, lpa_name: application.lpa_name || null, borough: application.borough || null, unit_array_count: sourceUnits.length, total_no_existing_residential_units: residential.total_no_existing_residential_units ?? null, total_no_proposed_residential_units: residential.total_no_proposed_residential_units ?? null };
+  const facts = [], exceptions = [];
+  sourceUnits.forEach((unit, position) => {
+    const change = String(unit.change_type || '').trim();
+    const unitCommencement = parsePldDate(unit.actual_commencement_date);
+    const unitCompletion = parsePldDate(unit.actual_completion_date);
+    const sourceRowKey = `${applicationId}:${position}:${sha256(JSON.stringify(unit))}`;
+    const fact = {
+      // Snapshot source-row identity: deterministic only for this frozen
+      // payload; it is not a longitudinal PLD unit identifier.
+      source_row_key: sourceRowKey, application_id: applicationId, elasticsearch_id: identity.elasticsearch_id, source_id: identity.source_id, hit_id: identity.hit_id,
+      lpa_app_no: application.lpa_app_no || null, lpa_name: application.lpa_name || null, borough: application.borough || null,
+      address: address(application), uprn: application.uprn || null, bo_system: application.bo_system || null,
+      application_development_type_raw: application.development_type || null, application_last_updated: application.last_updated || null,
+      change_type_raw: unit.change_type ?? null, change_type: change === 'Gain' || change === 'Loss' ? change : null,
+      unit_no: unit.unit_no ?? null, phase_detail_raw: unit.phase_detail ?? null,
+      unit_type_raw: unit.unit_type ?? null, unit_development_type_raw: unit.unit_development_type ?? null,
+      tenure_raw: unit.tenure ?? null, provider_raw: unit.provider ?? null,
+      unit_commencement_date: unitCommencement, unit_completion_date: unitCompletion,
+      root_commencement_date: rootCommencement, root_completion_date: rootCompletion,
+      superseded_date_raw: unit.superseded_date ?? null, superseded_by_lpa_app_no: unit.superseded_by_lpa_app_no ?? null,
+      application_superseding_details: application.application_details?.superseding_details || []
+    };
+    facts.push(fact);
+    if (!fact.change_type) exceptions.push({ source_row_key: sourceRowKey, reason: change ? 'unrecognised_change_type' : 'missing_change_type', value: unit.change_type ?? null });
+    for (const [name, parsed] of [['unit_commencement', unitCommencement], ['unit_completion', unitCompletion], ['root_commencement', rootCommencement], ['root_completion', rootCompletion]]) if (parsed.date_status.startsWith('invalid') || parsed.date_status === 'impossible_date') exceptions.push({ source_row_key: sourceRowKey, reason: `${name}_${parsed.date_status}`, value: parsed.raw_date });
+  });
+  return { application: appRecord, facts, exceptions };
+}
+
 export function normaliseApplications(hits) {
-  const facts = [], exceptions = [], apps = [];
+  const applications = [], facts = [], exceptions = [];
   for (const hit of hits) {
-    const application = hit._source || hit;
-    const identity = sourceApplicationIdentity(hit);
-    if (!identity.application_id) throw new Error('Source hit has no application identifier');
-    const applicationId = identity.application_id;
-    const rootCommencement = parsePldDate(application.actual_commencement_date);
-    const rootCompletion = parsePldDate(application.actual_completion_date);
-    const residential = application.application_details?.residential_details || {};
-    const sourceUnits = Array.isArray(residential.residential_units) ? residential.residential_units : [];
-    apps.push({ application_id: applicationId, elasticsearch_id: identity.elasticsearch_id, source_id: identity.source_id, hit_id: identity.hit_id, identifier_conflict: identity.conflicting_identifiers, lpa_app_no: application.lpa_app_no || null, lpa_name: application.lpa_name || null, borough: application.borough || null, unit_array_count: sourceUnits.length, total_no_existing_residential_units: residential.total_no_existing_residential_units ?? null, total_no_proposed_residential_units: residential.total_no_proposed_residential_units ?? null });
-    sourceUnits.forEach((unit, position) => {
-      const change = String(unit.change_type || '').trim();
-      const unitCommencement = parsePldDate(unit.actual_commencement_date);
-      const unitCompletion = parsePldDate(unit.actual_completion_date);
-      const sourceRowKey = `${applicationId}:${position}:${sha256(JSON.stringify(unit))}`;
-      const fact = {
-        // Snapshot source-row identity: deterministic only for this frozen
-        // payload; it is not a longitudinal PLD unit identifier.
-        source_row_key: sourceRowKey, application_id: applicationId, elasticsearch_id: identity.elasticsearch_id, source_id: identity.source_id, hit_id: identity.hit_id,
-        lpa_app_no: application.lpa_app_no || null, lpa_name: application.lpa_name || null, borough: application.borough || null,
-        address: address(application), uprn: application.uprn || null, bo_system: application.bo_system || null,
-        application_development_type_raw: application.development_type || null, application_last_updated: application.last_updated || null,
-        change_type_raw: unit.change_type ?? null, change_type: change === 'Gain' || change === 'Loss' ? change : null,
-        unit_no: unit.unit_no ?? null, phase_detail_raw: unit.phase_detail ?? null,
-        unit_type_raw: unit.unit_type ?? null, unit_development_type_raw: unit.unit_development_type ?? null,
-        tenure_raw: unit.tenure ?? null, provider_raw: unit.provider ?? null,
-        unit_commencement_date: unitCommencement, unit_completion_date: unitCompletion,
-        root_commencement_date: rootCommencement, root_completion_date: rootCompletion,
-        superseded_date_raw: unit.superseded_date ?? null, superseded_by_lpa_app_no: unit.superseded_by_lpa_app_no ?? null,
-        application_superseding_details: application.application_details?.superseding_details || []
-      };
-      facts.push(fact);
-      if (!fact.change_type) exceptions.push({ source_row_key: sourceRowKey, reason: change ? 'unrecognised_change_type' : 'missing_change_type', value: unit.change_type ?? null });
-      for (const [name, parsed] of [['unit_commencement', unitCommencement], ['unit_completion', unitCompletion], ['root_commencement', rootCommencement], ['root_completion', rootCompletion]]) if (parsed.date_status.startsWith('invalid') || parsed.date_status === 'impossible_date') exceptions.push({ source_row_key: sourceRowKey, reason: `${name}_${parsed.date_status}`, value: parsed.raw_date });
-    });
+    const result = normaliseHit(hit);
+    applications.push(result.application);
+    facts.push(...result.facts);
+    exceptions.push(...result.exceptions);
   }
-  return { applications: apps, facts, exceptions };
+  return { applications, facts, exceptions };
+}
+
+// Single-fact version, so a caller can stream facts in from disk one at a
+// time (build-data.mjs does this per variant) instead of holding the whole
+// fact set in memory for every methodology variant simultaneously.
+export function classifyFact(fact, variantId, firstYear, lastYear) {
+  const variant = VARIANTS[variantId];
+  if (!variant) throw new Error(`Unknown methodology variant: ${variantId}`);
+  if (!fact.change_type) {
+    const reason = fact.change_type_raw == null || !String(fact.change_type_raw).trim() ? 'missing_change_type' : 'unrecognised_change_type';
+    const item = { ...exception(fact, reason) };
+    return { included: null, exception: item, disposition: item };
+  }
+  const selected = selectDate(fact, variant);
+  if (!selected.date?.parsed_date) {
+    const reason = selected.invalid ? 'invalid_required_reporting_date' : 'missing_required_reporting_date';
+    const item = { ...exception(fact, reason), reporting_date_source: selected.source || null, date_reason: selected.reason };
+    return { included: null, exception: item, disposition: item };
+  }
+  const year = financialYear(selected.date);
+  if (yearStart(year) < firstYear || yearStart(year) > lastYear) {
+    const disposition = { ...exception(fact, 'valid_reporting_date_outside_requested_window'), reporting_date: selected.date.parsed_date, reporting_date_source: selected.source, year };
+    return { included: null, exception: null, disposition };
+  }
+  const row = { ...fact, year, units: fact.change_type === 'Loss' ? -1 : 1, reporting_date: selected.date.parsed_date, reporting_date_source: selected.source, fallback_reason: selected.fallback_reason || null, affordability: affordability(fact.tenure_raw), dwelling_type: dwellingType(fact.unit_type_raw), inferred_use_class: inferredUseClass(fact.unit_type_raw, fact.unit_development_type_raw), supersession_status: supersessionStatus(fact) };
+  const disposition = { ...exception(fact, 'included_in_requested_window'), year, reporting_date_source: selected.source };
+  return { included: row, exception: null, disposition };
 }
 
 export function applyVariant(facts, variantId, firstYear, lastYear) {
-  const variant = VARIANTS[variantId];
-  if (!variant) throw new Error(`Unknown methodology variant: ${variantId}`);
   const included = [], exceptions = [], dispositions = [];
   for (const fact of facts) {
-    if (!fact.change_type) {
-      const reason = fact.change_type_raw == null || !String(fact.change_type_raw).trim() ? 'missing_change_type' : 'unrecognised_change_type';
-      const item = { ...exception(fact, reason) }; exceptions.push(item); dispositions.push(item); continue;
-    }
-    const selected = selectDate(fact, variant);
-    if (!selected.date?.parsed_date) {
-      const reason = selected.invalid ? 'invalid_required_reporting_date' : 'missing_required_reporting_date';
-      const item = { ...exception(fact, reason), reporting_date_source: selected.source || null, date_reason: selected.reason }; exceptions.push(item); dispositions.push(item); continue;
-    }
-    const year = financialYear(selected.date);
-    if (yearStart(year) < firstYear || yearStart(year) > lastYear) { dispositions.push({ ...exception(fact, 'valid_reporting_date_outside_requested_window'), reporting_date: selected.date.parsed_date, reporting_date_source: selected.source, year }); continue; }
-    const row = { ...fact, year, units: fact.change_type === 'Loss' ? -1 : 1, reporting_date: selected.date.parsed_date, reporting_date_source: selected.source, fallback_reason: selected.fallback_reason || null, affordability: affordability(fact.tenure_raw), dwelling_type: dwellingType(fact.unit_type_raw), inferred_use_class: inferredUseClass(fact.unit_type_raw, fact.unit_development_type_raw), supersession_status: supersessionStatus(fact) };
-    included.push(row); dispositions.push({ ...exception(fact, 'included_in_requested_window'), year, reporting_date_source: selected.source });
+    const result = classifyFact(fact, variantId, firstYear, lastYear);
+    dispositions.push(result.disposition);
+    if (result.exception) exceptions.push(result.exception);
+    if (result.included) included.push(result.included);
   }
   return { included, exceptions, dispositions };
 }
@@ -154,33 +181,36 @@ function selectDate(fact, variant) {
 function unusableDate(date, source, reason) { return { date: null, source, reason, invalid: Boolean(date && date.date_status !== 'missing') }; }
 
 export function assemble(rows) {
-  const summaries = new Map(), details = new Map();
+  const summaries = new Map(), details = [];
   for (const row of rows) {
     for (const authority of [row.lpa_name || 'Unallocated', 'All London']) addSummary(summaries, authority, row);
-    // Application identity is intentionally part of the browser-detail key.
-    const key = [row.application_id, row.source_row_key, row.year].join('\0');
-    details.set(key, { source_row_key: row.source_row_key, application_id: row.application_id, lpa_app_no: row.lpa_app_no, authority: row.lpa_name || 'Unallocated', borough: row.borough || null, address: row.address, year: row.year, units: row.units, units_lp2021: null, reporting_date: row.reporting_date, reporting_date_source: row.reporting_date_source, change_type: row.change_type, phase_detail: row.phase_detail_raw, affordability: row.affordability, dwelling_type: row.dwelling_type, use_class: row.inferred_use_class, tenure_raw: row.tenure_raw, unit_type_raw: row.unit_type_raw, unit_development_type_raw: row.unit_development_type_raw, supersession_status: row.supersession_status });
+    details.push(toDetailRow(row));
   }
-  return { annual_summary: [...summaries.values()].sort(compareSummary), records: [...details.values()].sort(compareDetail) };
+  return { annual_summary: [...summaries.values()].sort(compareSummary), records: details.sort(compareDetail) };
 }
 
-function addSummary(map, authority, row) {
+// Exported so build-data.mjs can accumulate a single small summary Map while
+// streaming rows in from disk per variant, rather than building the full
+// `included` row array in memory first and calling assemble() on it.
+export function addSummary(map, authority, row) {
   const key = `${authority}\0${row.year}`;
-  if (!map.has(key)) map.set(key, { authority, year: row.year, completions: 0, target: authority === 'All London' ? target(row.year) : null, affordability: {}, dwelling_type: {}, use_class: {}, cube: {} });
+  if (!map.has(key)) map.set(key, emptySummaryRow(authority, row.year));
   const bucket = map.get(key); bucket.completions += row.units;
   add(bucket.affordability, row.affordability, row.units); add(bucket.dwelling_type, row.dwelling_type, row.units); add(bucket.use_class, row.inferred_use_class, row.units);
   const a = bucket.cube[row.affordability] ||= {}; const d = a[row.dwelling_type] ||= {}; add(d, row.inferred_use_class, row.units);
 }
+export function emptySummaryRow(authority, year) { return { authority, year, completions: 0, target: authority === 'All London' ? target(year) : null, affordability: {}, dwelling_type: {}, use_class: {}, cube: {} }; }
+export function toDetailRow(row) { return { source_row_key: row.source_row_key, application_id: row.application_id, lpa_app_no: row.lpa_app_no, authority: row.lpa_name || 'Unallocated', borough: row.borough || null, address: row.address, year: row.year, units: row.units, units_lp2021: null, reporting_date: row.reporting_date, reporting_date_source: row.reporting_date_source, change_type: row.change_type, phase_detail: row.phase_detail_raw, affordability: row.affordability, dwelling_type: row.dwelling_type, use_class: row.inferred_use_class, tenure_raw: row.tenure_raw, unit_type_raw: row.unit_type_raw, unit_development_type_raw: row.unit_development_type_raw, supersession_status: row.supersession_status }; }
 function add(object, key, value) { object[key] = (object[key] || 0) + value; }
 function exception(fact, reason) { return { source_row_key: fact.source_row_key, application_id: fact.application_id, authority: fact.lpa_name || 'Unallocated', change_type: fact.change_type || null, reason }; }
 function address(app) { return [app.site_name, app.site_number, app.street_name, app.secondary_street_name, app.locality, app.postcode].filter(Boolean).join(', ') || 'Address not recorded'; }
 function yearStart(year) { return Number(year.slice(0, 4)); }
-function target(year) { return year >= '2021/22' ? 52287 : 42388; }
+export function target(year) { return year >= '2021/22' ? 52287 : 42388; }
 function affordability(tenure) { return classify(tenure, CATEGORY_RULES.affordability, tenure ? String(tenure) : 'Not known'); }
 function dwellingType(value) { return classify(value, CATEGORY_RULES.dwelling_type, value ? String(value).trim() : 'Other', true); }
 function inferredUseClass(unitType, developmentType) { const unit = String(unitType || '').trim(); const combined = [unit, developmentType].filter(Boolean).join(' '); for (const rule of CATEGORY_RULES.use_class) { const subject = rule.evidence === 'unit_type' ? unit : combined; if (new RegExp(rule.pattern, 'i').test(subject)) return rule.label; } return combined ? 'Other residential' : 'Not known'; }
 function classify(value, rules, fallback, exact = false) { const text = String(value || '').trim(); for (const rule of rules) { if (exact ? text.toLowerCase() === rule.exact : new RegExp(rule.pattern, 'i').test(text)) return rule.label; } return fallback; }
 function supersessionStatus(fact) { return fact.superseded_date_raw || fact.superseded_by_lpa_app_no || fact.application_superseding_details.length ? 'flagged' : 'not_flagged'; }
 function nullable(value) { return value === null || value === undefined || String(value).trim() === '' ? null : String(value); }
-function compareSummary(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority); }
-function compareDetail(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority) || a.application_id.localeCompare(b.application_id) || a.source_row_key.localeCompare(b.source_row_key); }
+export function compareSummary(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority); }
+export function compareDetail(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority) || a.application_id.localeCompare(b.application_id) || a.source_row_key.localeCompare(b.source_row_key); }

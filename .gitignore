@@ -3,3 +3,6 @@ node_modules/
 .npm/
 npm-debug.log*
 package-lock.json
+
+# Generated data-loader output (snapshots, variants, logs) — not source
+build/
