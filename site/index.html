@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Explore net self-contained housing completions across London by year, authority, affordability, dwelling type and use class.">
+  <meta name="description" content="An independent, experimental explorer for reconstructed net residential completion counts derived from Planning London Datahub records.">
   <title>London residential completions explorer</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -11,15 +11,20 @@
   <header class="topbar">
     <div class="shell topbar-inner">
       <a class="brand" href="." aria-label="London completions explorer, based on London Data Store data"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>London completions explorer<small>Based on London Data Store data</small></span></a>
-      <div class="header-meta"><span id="updated">Data date unavailable</span><button id="refresh" class="text-button" type="button">Check for update</button></div>
+      <div class="header-meta"><span id="updated">Data date unavailable</span></div>
     </div>
   </header>
   <main class="shell workspace">
     <section id="status" class="status" hidden></section>
     <section class="dashboard-heading">
       <div><p class="eyebrow">Housing monitoring</p><h1>Residential completions</h1></div>
-      <p>Net self-contained homes recorded in the Planning London Datahub. Select any category to recalculate the whole view.</p>
+      <p>Reconstructed net counts derived from self-contained residential-unit records in the Planning London Datahub. Select any category to recalculate the whole view.</p>
     </section>
+
+    <aside class="publication-note" aria-label="Important information about the data">
+      <strong>Independent experimental reconstruction—not official GLA statistics.</strong>
+      <span>This service is not affiliated with or endorsed by the GLA. The GLA cannot warrant the source data's quality or accuracy, and this project makes no warranty or claim of accuracy. Do not rely on it for consequential decisions. <a href="methodology.html">Read the methodology and limitations.</a></span>
+    </aside>
 
     <section class="controls" aria-label="Dashboard filters">
       <div class="control authority-control"><label for="authority">Planning authority</label><select id="authority"><option value="all">All London</option></select></div>
@@ -49,7 +54,7 @@
           </div>
         </div>
         <div id="stack-legend" class="stack-legend" aria-label="Chart legend"></div>
-        <div id="composition-chart" class="stack-chart" role="img" aria-label="Stacked annual completions chart"></div>
+        <div id="composition-chart" class="stack-chart" role="group" aria-label="Interactive stacked annual completions chart"></div>
       </article>
 
       <article class="panel mix-panel">
@@ -69,16 +74,16 @@
       </article>
     </section>
 
-    <details class="panel records-panel">
-      <summary><span><span class="eyebrow">Underlying data</span><strong>Completion sites</strong></span><span>Search and export <b aria-hidden="true">⌄</b></span></summary>
+    <details id="records-panel" class="panel records-panel">
+      <summary><span><span class="eyebrow">Underlying data</span><strong>Address-grouped completion records</strong></span><span>Search and export <b aria-hidden="true">⌄</b></span></summary>
       <div class="records-content">
-        <div class="table-actions"><input id="search" type="search" placeholder="Search address or authority" aria-label="Search completion sites"><button id="download" class="button secondary" type="button">Download filtered CSV</button></div>
+        <div class="table-actions"><input id="search" type="search" placeholder="Search address or authority" aria-label="Search address-grouped completion records"><button id="download" class="button secondary" type="button">Download filtered CSV</button></div>
         <div class="table-wrap"><table><thead><tr><th>Site / address</th><th>Authority</th><th>Year</th><th>Net units</th><th>Affordability</th><th>Unit type</th><th>Use class</th></tr></thead><tbody id="records"></tbody></table></div>
         <p id="record-count" class="muted"></p>
       </div>
     </details>
 
-    <footer><span>Source: Planning London Datahub</span><span>Self-contained dwelling units only; not the full London Plan supply measure.</span><a href="https://data.london.gov.uk/housing/housing-supply-data-sources" target="_blank" rel="noreferrer">Methodology ↗</a><a href="https://data.london.gov.uk/dataset/residential-completions-dashboard-e196j" target="_blank" rel="noreferrer">LDS source ↗</a></footer>
+    <footer><span>Source data: Greater London Authority, Planning London Datahub.</span><span>The GLA cannot warrant its quality or accuracy; no endorsement is implied.</span><a href="methodology.html">Project methodology</a><a href="https://data.london.gov.uk/housing/housing-supply-data-sources" target="_blank" rel="noreferrer">GLA methodology ↗</a><a href="https://data.london.gov.uk/about/terms-and-conditions/" target="_blank" rel="noreferrer">Source terms ↗</a></footer>
   </main>
   <script type="module" src="app.js"></script>
 </body>

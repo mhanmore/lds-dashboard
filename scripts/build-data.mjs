@@ -4,12 +4,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 // is required by the API's published connection documentation.
 const endpoint = process.env.PLD_EXPORT_URL || 'https://planningdata.london.gov.uk/api-guest/applications/_search';
 const apiHeader = process.env.PLD_API_ALLOW_REQUEST || 'be2rmRnt&';
-const firstYear = Number(process.env.PLD_FIRST_YEAR || 2019);
+const firstYear = Number(process.env.PLD_FIRST_YEAR || 2004);
 const now = new Date();
 // Default to the most recently finished financial year; partial current-year
 // returns are useful for analysis, but should always be requested explicitly.
 const lastYear = Number(process.env.PLD_LAST_YEAR || (now.getUTCMonth() < 3 ? now.getUTCFullYear() - 2 : now.getUTCFullYear() - 1));
 const pageSize = 1_000;
+const outputDir = process.env.PLD_OUTPUT_DIR || 'site/data';
 
 if (!Number.isInteger(firstYear) || !Number.isInteger(lastYear) || firstYear > lastYear) throw new Error('PLD_FIRST_YEAR and PLD_LAST_YEAR must form a valid inclusive range');
 
@@ -23,10 +24,16 @@ if (!units.length) throw new Error('PLD returned no completed residential units;
 
 const annual_summary = summarise(units);
 const records = aggregateSites(units);
-const output = { metadata: { generated_at: new Date().toISOString(), source: 'Planning London Datahub public API', source_url: 'https://planningdata.london.gov.uk/api-guest/', schema_version: 2, methodology_version: 1, unit_records: units.length, records: records.length, demo: false }, annual_summary, records };
-await mkdir('site/data', { recursive: true });
-await writeFile('site/data/data.json', JSON.stringify(output));
-console.log(`Wrote ${records.length} compact site records and ${annual_summary.length} authority-year summaries from ${units.length} live PLD unit records`);
+const metadata = { generated_at: new Date().toISOString(), source: 'Planning London Datahub public API', source_url: 'https://planningdata.london.gov.uk/api-guest/', schema_version: 3, methodology_version: 2, unit_records: units.length, records: records.length, demo: false };
+const years = [...new Set(units.map(row => row.year))].sort();
+await mkdir(`${outputDir}/years`, { recursive: true });
+for (const year of years) {
+  const file = `${year.replace('/', '-')}.json`;
+  const shard = { year, records: records.filter(row => row.year === year) };
+  await writeFile(`${outputDir}/years/${file}`, JSON.stringify(shard));
+}
+await writeFile(`${outputDir}/index.json`, JSON.stringify({ metadata, years: years.map(year => ({ year, file: `years/${year.replace('/', '-')}.json` })), annual_summary }));
+console.log(`Wrote ${years.length} year shards with ${records.length} address-grouped records and ${annual_summary.length} authority-year summaries from ${units.length} live PLD unit records`);
 
 async function fetchYear(startYear) {
   const hits = [], from = `01/04/${startYear}`, to = `01/04/${startYear + 1}`;

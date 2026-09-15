@@ -6,11 +6,14 @@ const dimensionLabels = { affordability: 'Affordability', dwelling_type: 'Unit t
 let dataset;
 let filtered = [];
 let tableRows = [];
+const yearRecords = new Map();
+let tableRequest = 0;
+let defaultFromYear;
 let dimension = state.view && dimensionLabels[state.view] ? state.view : 'affordability';
 
 async function load() {
   try {
-    const response = await fetch('data/data.json');
+    const response = await fetch('data/index.json');
     if (!response.ok) throw Error('Data artifact unavailable');
     dataset = await response.json();
   } catch (_) {
@@ -18,7 +21,7 @@ async function load() {
     return;
   }
   const age = Date.now() - new Date(dataset.metadata.generated_at).getTime();
-  if (age > 36 * 60 * 60 * 1000) showStatus(`Using the local snapshot from ${relativeAge(dataset.metadata.generated_at)}. Check for an update when convenient.`);
+  if (age > 10 * 24 * 60 * 60 * 1000) showStatus(`The published snapshot is ${relativeAge(dataset.metadata.generated_at)}. The weekly update may need attention.`);
   $('updated').textContent = `Snapshot ${new Date(dataset.metadata.generated_at).toLocaleDateString('en-GB')}`;
   setupFilters();
   setDimension(dimension);
@@ -27,13 +30,14 @@ async function load() {
 function setupFilters() {
   const allLondon = dataset.annual_summary.filter(row => row.authority === 'All London');
   const years = [...new Set(allLondon.map(row => row.year))];
+  defaultFromYear = years[Math.max(0, years.length - 7)];
   const authorities = [...new Set(dataset.annual_summary.map(row => row.authority).filter(name => name !== 'All London'))].sort();
   fillSelect('authority', authorities);
   years.forEach(year => { $('fromYear').append(new Option(year, year)); $('toYear').append(new Option(year, year)); });
   fillSelect('affordability', categories(allLondon, 'affordability'));
   fillSelect('dwellingType', categories(allLondon, 'dwelling_type'));
   fillSelect('useClass', categories(allLondon, 'use_class'));
-  $('fromYear').value = state.from || years[0];
+  $('fromYear').value = state.from || defaultFromYear;
   $('toYear').value = state.to || years.at(-1);
   $('authority').value = state.authority || 'all';
   $('affordability').value = state.affordability || 'all';
@@ -42,8 +46,8 @@ function setupFilters() {
   ['authority', 'fromYear', 'toYear', 'affordability', 'dwellingType', 'useClass'].forEach(id => $(id).addEventListener('change', () => { syncUrl(); render(); }));
   document.querySelectorAll('[data-dimension]').forEach(button => button.addEventListener('click', () => setDimension(button.dataset.dimension)));
   $('clear').onclick = resetFilters;
-  $('refresh').onclick = checkForUpdate;
-  $('search').addEventListener('input', renderTable);
+  $('records-panel').addEventListener('toggle', () => { if ($('records-panel').open) void renderTable(); });
+  $('search').addEventListener('input', () => void renderTable());
   $('download').onclick = download;
 }
 
@@ -98,7 +102,7 @@ function render() {
   renderMix();
   renderRanking();
   renderAnnualTable();
-  renderTable();
+  void renderTable();
 }
 
 function renderMetrics() {
@@ -128,7 +132,7 @@ function renderComposition() {
     const segments = names.map(name => {
       const value = Math.max(0, values[name] || 0);
       const share = sum(Object.values(values)) > 0 ? value / sum(Object.values(values)) * 100 : 0;
-      return value ? `<button class="stack-segment" type="button" data-category="${esc(name)}" data-filter="${dimension}" style="height:${share}%;background:${palette[name]}" title="${esc(row.year)} · ${esc(name)}: ${fmt(value)}"></button>` : '';
+      return value ? `<button class="stack-segment" type="button" data-category="${esc(name)}" data-filter="${dimension}" style="height:${share}%;background:${palette[name]}" aria-label="${esc(row.year)}, ${esc(name)}: ${fmt(value)} completions" title="${esc(row.year)} · ${esc(name)}: ${fmt(value)}"></button>` : '';
     }).join('');
     const target = row.target ? `<span class="target-tick" style="bottom:${Math.min(100, row.target / maximum * 100)}%" title="Target: ${fmt(row.target)}"></span>` : '';
     return `<div class="year-column"><div class="column-value">${fmt(row.completions)}</div><div class="stack-shell" style="height:${height}%">${segments}</div>${target}<span class="year-label">${esc(row.year.replace('20', ''))}</span></div>`;
@@ -177,12 +181,31 @@ function renderAnnualTable() {
   }).join('');
 }
 
-function renderTable() {
+async function renderTable() {
+  if (!$('records-panel').open) return;
+  const request = ++tableRequest;
   const query = $('search').value.toLowerCase();
   const filters = currentFilters();
-  tableRows = (dataset.records || []).filter(row => (!query || `${row.address} ${row.authority}`.toLowerCase().includes(query)) && (filters.authority === 'All London' || row.authority === filters.authority) && row.year >= filters.from && row.year <= filters.to && (filters.affordability === 'all' || row.affordability === filters.affordability) && (filters.dwellingType === 'all' || row.dwelling_type === filters.dwellingType) && (filters.useClass === 'all' || row.use_class === filters.useClass));
+  $('record-count').textContent = 'Loading local year files…';
+  $('download').disabled = true;
+  try { await loadYearRecords(filters.from, filters.to); }
+  catch (_) { if (request === tableRequest) $('record-count').textContent = 'The selected local year files could not be loaded.'; return; }
+  if (request !== tableRequest) return;
+  const records = [...yearRecords.entries()].filter(([year]) => year >= filters.from && year <= filters.to).flatMap(([, rows]) => rows);
+  tableRows = records.filter(row => (!query || `${row.address} ${row.authority}`.toLowerCase().includes(query)) && (filters.authority === 'All London' || row.authority === filters.authority) && (filters.affordability === 'all' || row.affordability === filters.affordability) && (filters.dwellingType === 'all' || row.dwelling_type === filters.dwellingType) && (filters.useClass === 'all' || row.use_class === filters.useClass));
   $('records').innerHTML = tableRows.slice(0, 500).map(row => `<tr><td>${esc(row.address)}</td><td>${esc(row.authority)}</td><td>${esc(row.year)}</td><td>${fmt(row.units_lp2021)}</td><td>${esc(row.affordability)}</td><td>${esc(row.dwelling_type)}</td><td>${esc(row.use_class)}</td></tr>`).join('') || '<tr><td colspan="7">No sites match these filters.</td></tr>';
-  $('record-count').textContent = tableRows.length > 500 ? `Showing the first 500 of ${fmt(tableRows.length)} grouped site records. CSV includes all filtered rows.` : `${fmt(tableRows.length)} grouped site record${tableRows.length === 1 ? '' : 's'}`;
+  $('record-count').textContent = tableRows.length > 500 ? `Showing the first 500 of ${fmt(tableRows.length)} address-grouped records. CSV includes all filtered rows.` : `${fmt(tableRows.length)} address-grouped record${tableRows.length === 1 ? '' : 's'}`;
+  $('download').disabled = false;
+}
+
+async function loadYearRecords(from, to) {
+  const needed = dataset.years.filter(entry => entry.year >= from && entry.year <= to && !yearRecords.has(entry.year));
+  await Promise.all(needed.map(async entry => {
+    const response = await fetch(`data/${entry.file}`);
+    if (!response.ok) throw Error(`Unable to load ${entry.year}`);
+    const shard = await response.json();
+    yearRecords.set(entry.year, shard.records || []);
+  }));
 }
 
 function totalsFor(key, rows) { const totals = {}; rows.forEach(row => Object.entries(row[key] || {}).forEach(([name, value]) => add(totals, name, value))); return totals; }
@@ -190,11 +213,9 @@ function sum(values) { return values.reduce((total, value) => total + value, 0);
 function setDimension(next) { dimension = next; document.querySelectorAll('[data-dimension]').forEach(button => button.classList.toggle('active', button.dataset.dimension === dimension)); syncUrl(); render(); }
 function applyCategoryFilter(key, value) { const id = key === 'affordability' ? 'affordability' : key === 'dwelling_type' ? 'dwellingType' : 'useClass'; $(id).value = value; syncUrl(); render(); }
 
-function resetFilters() { ['authority', 'affordability', 'dwellingType', 'useClass'].forEach(id => $(id).value = 'all'); $('fromYear').selectedIndex = 0; $('toYear').selectedIndex = $('toYear').options.length - 1; syncUrl(); render(); }
-function syncUrl() { const filters = currentFilters(), params = new URLSearchParams(); if (filters.authority !== 'All London') params.set('authority', filters.authority); if ($('fromYear').selectedIndex !== 0) params.set('from', filters.from); if ($('toYear').selectedIndex !== $('toYear').options.length - 1) params.set('to', filters.to); if (filters.affordability !== 'all') params.set('affordability', filters.affordability); if (filters.dwellingType !== 'all') params.set('type', filters.dwellingType); if (filters.useClass !== 'all') params.set('use', filters.useClass); if (dimension !== 'affordability') params.set('view', dimension); history.replaceState({}, '', `${location.pathname}${params.size ? `?${params}` : ''}`); }
+function resetFilters() { ['authority', 'affordability', 'dwellingType', 'useClass'].forEach(id => $(id).value = 'all'); $('fromYear').value = defaultFromYear; $('toYear').selectedIndex = $('toYear').options.length - 1; syncUrl(); render(); }
+function syncUrl() { const filters = currentFilters(), params = new URLSearchParams(); if (filters.authority !== 'All London') params.set('authority', filters.authority); if (filters.from !== defaultFromYear) params.set('from', filters.from); if ($('toYear').selectedIndex !== $('toYear').options.length - 1) params.set('to', filters.to); if (filters.affordability !== 'all') params.set('affordability', filters.affordability); if (filters.dwellingType !== 'all') params.set('type', filters.dwellingType); if (filters.useClass !== 'all') params.set('use', filters.useClass); if (dimension !== 'affordability') params.set('view', dimension); history.replaceState({}, '', `${location.pathname}${params.size ? `?${params}` : ''}`); }
 
-async function checkForUpdate() { const button = $('refresh'); button.disabled = true; button.textContent = 'Checking…'; showStatus('Checking for a newer published snapshot…'); const refreshed = await requestWorker(dataset.metadata.generated_at); button.disabled = false; button.textContent = 'Check for update'; if (refreshed) location.reload(); else showStatus(`No newer snapshot is available. Using data from ${relativeAge(dataset.metadata.generated_at)}.`); }
-async function requestWorker(previous) { try { const response = await fetch('/api/data?refresh=1', { cache: 'no-store' }); if (!response.ok) return null; const latest = await response.json(); return latest.metadata?.generated_at !== previous && !latest.metadata?.refresh_in_progress ? latest : null; } catch (_) { return null; } }
 function showStatus(message, error = false) { const element = $('status'); element.hidden = false; element.textContent = message; element.classList.toggle('error', error); }
 function relativeAge(timestamp) { const days = Math.max(0, Math.floor((Date.now() - new Date(timestamp).getTime()) / 86400000)); return days < 1 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`; }
 function esc(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }

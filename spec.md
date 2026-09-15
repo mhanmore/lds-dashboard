@@ -1,388 +1,154 @@
-# London Residential Completions Dashboard
+# London residential completions explorer
 
-## 1. Purpose
+## 1. Project status
 
-Recreate the functionality of the former Greater London Authority **Residential Completions Dashboard** as a lightweight, open web application.
+This repository contains an independent, experimental reconstruction of part of the withdrawn Greater London Authority Residential Completions Dashboard. It was prompted by the intention of making the underlying public data easier to access and explore. It is not affiliated with, commissioned, endorsed or maintained by the GLA and is not a definitive reproduction of the former dashboard.
 
-The former dashboard was a Power BI report published through the London Datastore using data from the **Planning London Datahub (PLD)**. The London Datastore record remains available, but the original interactive dashboard has been removed or is no longer practically accessible.
+Source data is supplied by the Greater London Authority through the Planning London Datahub, and the GLA cannot warrant its quality or accuracy. The site and transformed data are also published without warranty or representation of accuracy, completeness or fitness for a particular purpose. They must not be presented as official statistics or relied upon for statutory monitoring, planning decisions, financial decisions or other consequential uses.
 
-The replacement should:
+## 2. Purpose and scope
 
-- reproduce the useful analytical functionality of the former dashboard;
-- obtain its underlying data from the public Planning London Datahub API;
-- require no conventional application server or database;
-- perform filtering, aggregation and visualisation in browser-side JavaScript;
-- use a minimal serverless worker solely to refresh the static data cache when it becomes stale;
-- be suitable for deployment through Cloudflare Pages or equivalent static hosting;
-- preserve enough information about data extraction and methodology that results can be reproduced and audited.
+The project aims to:
 
-This is initially a **functional recreation**, not a pixel-for-pixel clone of the former Power BI interface.
+- restore useful exploratory access to residential-completion records after withdrawal of the former dashboard;
+- make the source, transformations and limitations inspectable;
+- provide fast browser-side filtering and visualisation without Power BI;
+- operate as a static GitHub Pages site without a public API or database; and
+- refresh its checked-in snapshot periodically through an isolated offline process.
 
-## 2. Source system
+It does not currently aim to reproduce every former dashboard page or establish equivalence with the GLA's complete housing-supply methodology.
 
-The authoritative source is the GLA **Planning London Datahub**.
+## 3. Source
 
-The PLD is London's consolidated planning database and includes planning applications, permissions, commencements and completions across London planning authorities.
+The source is the public, read-only Planning London Datahub Elasticsearch API. The current importer reads residential units nested in PLD application documents. Relevant PLD collections also include other residential accommodation and non-permanent dwellings, but those are not yet imported.
 
-The GLA provides read-only programmatic access through an Elasticsearch API. Relevant API indices include:
+PLD is a changing operational database populated from planning-authority data and subject to reporting and processing lags. Historic snapshot totals may therefore change after the period concerned.
 
-- `applications`
-- `residential_units`
-- `other_resi_accommodation_unit_details`
-- `non-permanent_dwellings_details`
-
-The precise queries, transformations and field mappings necessary to reproduce the former dashboard will need to be established during implementation.
-
-Particular care is required because the published dashboard represents an analytical treatment of PLD records rather than necessarily a simple count of records returned by the API.
-
-## 3. Architecture
-
-The dashboard should remain essentially a **static web application**.
-
-There should be no conventional runtime application server or database. HTML, CSS, JavaScript and the processed dashboard dataset should be served as static assets.
-
-A small serverless worker should provide **cache refresh on demand**.
+## 4. Implemented architecture
 
 ```text
-                         ┌──────────────────────┐
-                         │ Planning London      │
-                         │ Datahub API          │
-                         └──────────┬───────────┘
-                                    │
-                              stale cache only
-                                    │
-                                    ▼
-Browser ──page load──► Cloudflare Worker
-                         │
-                         ├── cache < 36h old
-                         │       │
-                         │       └── use existing data
-                         │
-                         └── cache ≥ 36h old / absent
-                                 │
-                                 ├── retrieve PLD data
-                                 ├── transform / aggregate
-                                 ├── validate
-                                 └── replace cached dataset
-                                           │
-                                           ▼
-                                   Static dashboard
-                                           │
-                                           ▼
-                                Browser-side JavaScript
+External weekly VPS job ──► Planning London Datahub API
+          │
+          ├── build a temporary complete snapshot
+          ├── transform and split it by financial year
+          ├── validate internal consistency
+          └── replace site/data, commit and push only on success
+                                      │
+                                      ▼
+                         GitHub Pages deployment
+                                      │
+                                      ▼
+                              Static dashboard
 ```
 
-The serverless component therefore exists to solve two problems only:
+The repository contains:
 
-1. avoid browser CORS restrictions when accessing the PLD API; and
-2. maintain a reasonably current cached dataset.
+- `site/data/index.json`: metadata, shard inventory and `annual_summary` rows;
+- `site/data/years/*.json`: address-grouped detail rows by financial year;
+- `scripts/build-data.mjs`: PLD retrieval and transformation;
+- `scripts/validate-data.mjs`: artifact consistency checks;
+- `scripts/merge-data.mjs`: a maintenance utility for combining separately built ranges; and
+- `.github/workflows/pages.yml`: static GitHub Pages deployment.
 
-It should not become an application backend.
+There is no visitor-facing refresh button, runtime service, database or KV store. Dashboard interactions never query PLD.
 
-## 4. On-demand refresh and 36-hour cache
+The intended weekly cron job, VPS path and repository write credential are deliberately external to this repository. Their configuration is described in the README but cannot be verified from this codebase.
 
-Data should be refreshed **on demand**, rather than by an hourly, daily or weekly scheduled process.
+## 5. Implemented data model
 
-On initial page load the application should determine the age of the most recently successfully generated dataset.
+The current artifact uses schema version 3 and methodology version 2.
 
-### Fresh cache
+`metadata` records the generation time, source, schema and methodology versions, number of retrieved unit entries and number of address-grouped detail rows. `years` lists every detail shard. `annual_summary` contains authority-year net completions, an optional London-wide target, one-dimensional category totals and an affordability × dwelling-type × inferred-use-class cube.
 
-If:
+Detail rows contain:
 
-```text
-current time - data.generated_at < 36 hours
-```
-
-the existing dataset should be returned immediately and the dashboard should load normally.
-
-No request to the GLA API should be made.
-
-### Stale or absent cache
-
-If the dataset is more than **36 hours old**, or no usable cached dataset exists, the worker should initiate an update from the Planning London Datahub API.
-
-During this process the browser should display a simple loading screen:
-
-> **We're just updating the London Data Store information…**
-
-The dashboard should appear automatically when the refreshed data is available.
-
-The interface may display a small secondary message if useful, for example:
-
-> This can take a moment. The information hasn't been refreshed in the last 36 hours.
-
-The user should not need to reload the page manually.
-
-### Successful refresh
-
-Following a successful refresh:
-
-- validate the retrieved data;
-- write/replace the cached processed dataset;
-- record its generation timestamp;
-- return the new data to the requesting browser;
-- initialise the dashboard.
-
-The timestamp must represent the **last successful data refresh**, not merely the last request to the worker.
-
-### Failed refresh
-
-Failure of the GLA API should not make an otherwise usable dashboard unavailable.
-
-If refresh fails and an older cached dataset exists, the application should fall back to that dataset and clearly indicate its age, for example:
-
-> **Using data last updated 4 days ago — the London Data Store could not currently be refreshed.**
-
-The previous good dataset must not be overwritten by a failed, incomplete or obviously invalid refresh.
-
-Only if there is no usable cached dataset should an API failure prevent the dashboard from loading.
-
-## 5. Concurrency
-
-The implementation should prevent several simultaneous visitors from triggering several expensive PLD refreshes when the 36-hour threshold is crossed.
-
-Conceptually:
-
-```text
-request A ─┐
-request B ─┼──► cache stale ──► ONE refresh ──► new cached dataset
-request C ─┘                         │
-                                    └── all requests use result
-```
-
-The precise locking/coalescing mechanism can be selected during implementation.
-
-This matters particularly because the first visit after a long period of inactivity is the expected refresh mechanism.
-
-## 6. Processed data and cache design
-
-Do not simply proxy the complete PLD dataset to every browser.
-
-The worker/update process should transform source records into assets appropriate to dashboard analysis. A possible logical structure is:
-
-```text
-metadata
-annual-summary
-completion-sites
-```
-
-Metadata should include at least:
-
-```json
-{
-  "generated_at": "2026-09-15T12:00:00Z",
-  "source": "Planning London Datahub",
-  "schema_version": 1,
-  "methodology_version": 1
-}
-```
-
-The summary dataset should contain the relatively compact multidimensional information necessary for the principal charts.
-
-A larger site/application dataset may support the detailed Data view and can be fetched by the browser only when that view is opened.
-
-Once data has been delivered, ordinary dashboard interaction should be entirely client-side. Changing authority, year, affordability, dwelling type or other filters must **not** result in further GLA API requests.
-
-## 7. Former dashboard functionality
-
-The original Power BI report contained **eight pages**.
-
-The initial objective should be to identify and reproduce the analytically useful functions of those pages rather than their precise layout.
-
-Surviving material confirms functionality including:
-
-### Completions against target
-
-Annual residential completions by planning authority, compared with the applicable housing target.
-
-Outputs included:
-
-- completions by financial year;
-- target by financial year;
-- completions as percentage of target;
-- annual chart;
-- underlying annual values.
-
-### Self-contained housing and affordability
-
-Annual net self-contained housing completions, including breakdowns by affordability.
-
-Known categories include:
-
-- Affordable;
-- Market;
-- Not known / not applicable;
-- replacement units where relevant.
-
-Filters included planning authority and dwelling type.
-
-Known dwelling-type categories included houses/bungalows, flats/apartments/maisonettes, studios/bedsits, cluster flats, C4 small HMOs and live/work units.
-
-### Detailed Data view
-
-The former report contained a record-level/table-oriented Data page.
-
-Known filters included:
-
+- address text assembled from available site fields;
 - planning authority;
-- completion year;
-- site size / large or small site;
-- address;
-- Opportunity Area.
+- financial year;
+- project-defined net units;
+- a schema-compatibility `units_lp2021` value currently identical to net units;
+- inferred affordability grouping;
+- lightly normalised unit type; and
+- use class inferred from unit type.
 
-The underlying data included both raw unit numbers and the GLA's adjusted `Units LP2021` measure.
+These are address-grouped analytical rows, not authoritative site or application records. See [methodology and limitations](docs/methodology.md).
 
-The replacement should make this detailed data particularly easy to search, filter and export.
+## 6. Implemented dashboard
 
-## 8. Filters and interaction
+The static browser application provides:
 
-Subject to verification against the source data and archived dashboard, the client-side application should ultimately support filters for:
+- authority, start-year, end-year, affordability, unit-type and inferred-use-class filters;
+- filter state in the URL query string;
+- annual net-completion metrics and stacked charts;
+- affordability, unit-type and inferred-use-class composition views;
+- an indicative All London target comparison for an otherwise unfiltered view;
+- top-ten authorities for All London;
+- a selected borough plus ten nearby totals for borough comparisons, with the focus borough visually distinguished;
+- an annual values table;
+- lazy loading of selected financial-year detail shards;
+- address/authority search over loaded detail rows; and
+- CSV export of all filtered detail rows.
 
-- planning authority;
-- financial year or range of years;
-- affordability;
-- tenure where available;
-- dwelling type;
-- site size;
-- Opportunity Area;
-- address/site.
+The detail table displays at most 500 rows on screen but includes all matching rows in the CSV. A snapshot older than ten days produces a maintenance warning without blocking access.
 
-Selections should update relevant charts, totals and tables without server requests.
+Not implemented are tenure as a separate filter, site size, Opportunity Area, application identifiers, authoritative planning use class, borough-specific targets, or non-conventional accommodation.
 
-A URL/query-string representation of dashboard state would be desirable so that a filtered view can be bookmarked or shared.
+## 7. Current calculation
 
-## 9. Methodology
+A nested residential unit with an `actual_completion_date` in the requested financial year is included. A `Loss` contributes −1 and every other included unit contributes +1. Affordability, unit type and inferred use class are then classified as described in the methodology document.
 
-A critical implementation task is to reconstruct the GLA methodology used by the former Power BI report.
+The calculation does not reproduce the former `Units LP2021` adjustment. The dashboard therefore describes the result as a reconstructed net count of self-contained PLD residential-unit entries, not the full London Plan supply measure.
 
-This includes identifying:
+Annual target references are hard-coded as 42,388 before 2021/22 and 52,287 from 2021/22. They provide London-wide context only. Because the completion numerator excludes non-conventional supply, percentage-of-target results are indicative and not a statutory assessment.
 
-- what constitutes a residential completion;
-- gross versus net units;
-- treatment of losses;
-- self-contained versus non-self-contained accommodation;
-- treatment of replacement dwellings;
-- affordability classification;
-- site-size classification;
-- financial-year allocation;
-- London Plan target periods;
-- derivation of `Units LP2021`;
-- treatment of incomplete, duplicate or subsequently corrected PLD records.
+## 8. Retrieval and publication safeguards
 
-The replacement should not silently invent a new methodology merely because it produces plausible-looking totals.
+The builder:
 
-Where possible, calculated historic totals should be reconciled against published GLA figures.
+1. requests each financial year separately using an Elasticsearch scroll;
+2. de-duplicates application hits by Elasticsearch identifier;
+3. checks unique application hits against the API's reported total;
+4. holds the transformed result in memory until all requested years have been retrieved; and
+5. writes a compact index and one detail shard per financial year.
 
-Any differences that cannot be eliminated should be documented.
+The validator rejects unexpected schema versions, invalid or discontinuous year indexes, shard-inventory mismatches, shards above 25 MiB, missing fields, duplicate address groups, inconsistent cubes, disagreements between detail and authority totals, and disagreements between authority totals and All London.
 
-## 10. Validation
+Several historic London-wide figures are printed as informational comparisons. They are not release gates because their precise provenance and methodological equivalence have not yet been established. Passing validation demonstrates internal consistency, not correctness of PLD or equivalence with an official publication.
 
-Automated validation should compare generated results against known published totals.
+The recommended VPS process builds into a temporary directory and validates it before replacing `site/data`. A failed job does not push, so the previously deployed snapshot remains available.
 
-For example, the GLA has published London-wide net self-contained housing completions including:
+## 9. Known limitations and remaining work
 
-```text
-2019/20   37,843
-2020/21   30,703
-2021/22   37,524
-2022/23   32,053
-2023/24   31,629
-```
+The principal unresolved work is methodological rather than presentational:
 
-These provide useful regression tests for the extraction/transformation code.
+- establish citable definitions and sources for historical comparison figures;
+- reconstruct or remove the `Units LP2021` compatibility field;
+- identify the former dashboard's rules for incomplete, corrected and duplicate records;
+- add non-conventional residential accommodation where a defensible conversion method is available;
+- reconcile London, borough and tenure totals against official publications;
+- verify the target periods and values from primary material;
+- determine whether site-size and Opportunity Area fields can be added reliably; and
+- add automated tests for transformation functions after they are separated into importable modules.
 
-Additional borough-level and affordability benchmarks should be collected from surviving dashboard captures and GLA publications.
+The surviving printed copy of the old dashboard is evidence of layout, filters and displayed categories, but it is a messy printout with expanded controls and should not be treated as a definitive interface specification.
 
-A refresh which unexpectedly produces materially inconsistent historic totals should be treated as a potential validation failure rather than silently replacing the last known-good dataset.
+## 10. References
 
-## 11. UI approach
+- [GLA housing-supply data sources](https://data.london.gov.uk/housing/housing-supply-data-sources)
+- [Planning London Datahub](https://www.london.gov.uk/programmes-strategies/planning/digital-planning/planning-london-datahub)
+- [PLD API technical documentation](https://www.london.gov.uk/sites/default/files/planninglondondatahub_api_connection_technical_documentation_v1.pdf)
+- [London Datastore record for the withdrawn dashboard](https://data.london.gov.uk/dataset/residential-completions-dashboard-e196j)
+- [London Datastore terms and conditions](https://data.london.gov.uk/about/terms-and-conditions/)
+- [Avison Young appendix containing a surviving printed dashboard record](https://gat04-live-1517c8a4486c41609369c68f30c8-aa81074.divio-media.org/filer_public/54/19/5419aa41-68a9-4a3d-8a44-bce481591317/cd0807_appellant_appendices_to_planning_proof_of_evidence_of_nicholas_alston_-_part_1.pdf)
 
-The replacement should retain the analytical concepts of the Power BI dashboard but need not reproduce Power BI's visual design.
+## 11. Publication criteria
 
-Priorities are:
+A snapshot is technically ready for publication when:
 
-1. fast loading;
-2. obvious filters;
-3. legible charts;
-4. easy inspection of actual numbers;
-5. responsive desktop/mobile behaviour;
-6. shareable filtered views;
-7. accessible HTML;
-8. downloadable underlying data.
+- the complete requested PLD retrieval finishes;
+- `npm test` succeeds;
+- the static page, index and representative year shards are served successfully;
+- no public runtime-refresh dependency remains; and
+- the public interface and documentation retain the experimental-status, methodology and no-warranty caveats.
 
-Normal visits with a cache less than 36 hours old should feel indistinguishable from visiting an ordinary static website.
-
-The update screen should occur only on the first visit after the cached dataset becomes stale.
-
-## 12. Provenance and references
-
-### Current London Datastore record
-
-https://data.london.gov.uk/dataset/residential-completions-dashboard-e196j
-
-### Planning London Datahub
-
-https://www.london.gov.uk/programmes-strategies/planning/digital-planning/planning-london-datahub
-
-### API documentation
-
-https://www.london.gov.uk/sites/default/files/planninglondondatahub_api_connection_technical_documentation_v1.pdf
-
-### Surviving copy of former dashboard — Avison Young evidence
-
-A particularly useful contemporary record of the former dashboard survives in **Appendix C of the Appellant's Appendices to the Planning Proof of Evidence of Nicholas Alston**, prepared by Avison Young.
-
-The document contains captures of multiple pages of the GLA Residential Completions Dashboard dated **29 September 2025**:
-
-https://gat04-live-1517c8a4486c41609369c68f30c8-aa81074.divio-media.org/filer_public/54/19/5419aa41-68a9-4a3d-8a44-bce481591317/cd0807_appellant_appendices_to_planning_proof_of_evidence_of_nicholas_alston_-_part_1.pdf
-
-This is a publicly hosted planning-inquiry document. The project should link to it rather than duplicate the complete PDF unless preservation of a local evidential copy subsequently becomes desirable.
-
-## 13. Initial implementation phases
-
-**Phase 1 — reverse engineering**
-
-Identify the former dashboard pages, measures, filters and methodology from surviving captures, GLA documentation, FOI responses and published figures.
-
-Explore the PLD API and establish queries capable of reproducing known completion totals.
-
-**Phase 2 — refresh/cache pipeline**
-
-Implement the PLD retrieval and transformation process.
-
-Implement:
-
-- last-successful-refresh timestamp;
-- 36-hour freshness test;
-- on-demand refresh;
-- concurrent-request protection;
-- last-known-good fallback;
-- validation before cache replacement.
-
-**Phase 3 — dashboard**
-
-Implement the principal completion, target and affordability views with browser-side filtering.
-
-Implement the detailed searchable Data view.
-
-Implement the stale-data update screen and graceful failure behaviour.
-
-**Phase 4 — equivalence and documentation**
-
-Compare results systematically against surviving examples of the former dashboard.
-
-Document known methodological differences, limitations and source-data quality issues.
-
-Add download/share functionality and refine responsive presentation.
-
-## 14. Definition of success
-
-The project succeeds if a user can open the dashboard and:
-
-- normally receive a static cached dataset immediately;
-- automatically trigger a refresh when that dataset is more than 36 hours old;
-- see a simple explanatory wait screen while that exceptional refresh occurs;
-- fall back safely to the last known-good data if the source is temporarily unavailable;
-- subsequently perform all normal dashboard analysis locally in the browser.
-
-The result should provide substantially the same housing-completion analysis previously available from the GLA Power BI dashboard, with transparent provenance and without requiring Power BI, a conventional runtime backend or database.
+Technical readiness is not a claim that the figures are accurate or statistically equivalent to the former GLA dashboard.

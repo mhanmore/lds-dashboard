@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Methodology, validation status and limitations of the London residential completions explorer.">
+  <title>Methodology and limitations · London residential completions explorer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="." aria-label="Return to London completions explorer"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>London completions explorer<small>Based on London Data Store data</small></span></a>
+      <div class="header-meta"><a href=".">Return to dashboard</a></div>
+    </div>
+  </header>
+  <main class="shell prose">
+    <p class="eyebrow">About the data</p>
+    <h1>Methodology and limitations</h1>
+
+    <section class="publication-note">
+      <strong>Independent experimental reconstruction—not official GLA statistics.</strong>
+      <span>This project was prompted by the aim of making withdrawn public data easier to explore. It is not affiliated with or endorsed by the Greater London Authority. Its data, classifications, calculations and visualisations are provided without warranty or claim of accuracy, completeness or fitness for a particular purpose.</span>
+    </section>
+
+    <p>Source data: Greater London Authority, Planning London Datahub. The GLA cannot warrant the quality or accuracy of the source data. Do not rely on this dashboard for statutory monitoring, planning decisions, financial decisions or other consequential uses. Check figures against the GLA's source material, London Plan Annual Monitoring Reports and the underlying Planning London Datahub records.</p>
+
+    <h2>What is counted</h2>
+    <p>The importer reads self-contained residential-unit entries nested inside PLD application records. A unit with an actual completion date in the selected financial year contributes +1, except a unit marked as a loss, which contributes −1.</p>
+    <p>This is a project-defined reconstructed net count. It excludes other residential accommodation and non-permanent dwellings, so it is not the complete London Plan housing-supply measure. The displayed <code>Units LP2021</code> value is currently identical to the basic net-unit value; the former dashboard's adjustment has not been reconstructed.</p>
+
+    <h2>How records are classified</h2>
+    <p>Affordability is inferred from tenure text. Unit types are lightly normalised. Use class is inferred from unit type and is not an authoritative planning use-class field. Unknown and unrecognised values are retained where possible.</p>
+
+    <h2>What a detail row means</h2>
+    <p>Detail rows are grouped by address text, authority, financial year, affordability, unit type and inferred use class. They are not application-level records and have no stable planning-application identifier. Unrelated developments with identical grouping values may be combined, while one development may appear in several rows.</p>
+
+    <h2>Targets and comparisons</h2>
+    <p>The London-wide target values are contextual references shown only for an otherwise unfiltered All London selection. Because the completion count excludes non-conventional supply, the percentage is indicative rather than a statutory assessment.</p>
+    <p>Historical comparisons show material differences from figures recorded during reconstruction. Automated validation checks the internal consistency of the published files; it does not establish that the source data is complete or correct, or that this calculation is equivalent to the former dashboard.</p>
+
+    <h2>Source and updates</h2>
+    <p>The static snapshot is derived from the public Planning London Datahub API and is intended to be rebuilt weekly. PLD is a changing operational database and historic values can be revised after the period concerned. A failed update leaves the previous snapshot online.</p>
+
+    <nav class="reference-links" aria-label="Source references">
+      <a href="https://data.london.gov.uk/housing/housing-supply-data-sources" target="_blank" rel="noreferrer">GLA housing-supply data sources ↗</a>
+      <a href="https://www.london.gov.uk/programmes-strategies/planning/digital-planning/planning-london-datahub" target="_blank" rel="noreferrer">Planning London Datahub ↗</a>
+      <a href="https://data.london.gov.uk/dataset/residential-completions-dashboard-e196j" target="_blank" rel="noreferrer">Withdrawn dashboard record ↗</a>
+      <a href="https://data.london.gov.uk/about/terms-and-conditions/" target="_blank" rel="noreferrer">London Datastore terms ↗</a>
+    </nav>
+  </main>
+</body>
+</html>

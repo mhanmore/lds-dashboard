@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "python3 -m http.server 4173 -d site",
     "build:data": "node scripts/build-data.mjs",
-    "test": "node --test"
+    "validate:data": "node scripts/validate-data.mjs",
+    "test": "npm run validate:data && node --check site/app.js && node --check scripts/build-data.mjs && node --check scripts/merge-data.mjs"
   }
 }
