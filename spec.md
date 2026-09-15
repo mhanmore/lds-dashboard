@@ -56,22 +56,22 @@ The intended weekly cron job, VPS path and repository write credential are delib
 
 ## 5. Implemented data model
 
-The current artifact uses schema version 3 and methodology version 2.
+The current artifact uses schema version 4 and methodology version 1.
 
-`metadata` records the generation time, source, schema and methodology versions, number of retrieved unit entries and number of address-grouped detail rows. `years` lists every detail shard. `annual_summary` contains authority-year net completions, an optional London-wide target, one-dimensional category totals and an affordability × dwelling-type × inferred-use-class cube.
+`metadata` records the generation time, source, schema and methodology versions, number of retrieved unit entries and number of address-grouped detail rows. `years` lists every detail shard. `annual_summary` contains authority-year net completions, an optional London-wide target, one-dimensional category totals and an affordability × dwelling-type × inferred-use-class cube — accumulated from every included raw unit fact, independently of detail-row grouping below.
 
-Detail rows contain:
+Detail rows are grouped by address text, planning authority, financial year, affordability, dwelling type and inferred use class (see "Aggregation and dashboard behaviour" in [methodology and limitations](docs/methodology.md)); groups whose net units sum to zero are omitted. Each surviving row contains:
 
 - address text assembled from available site fields;
 - planning authority;
 - financial year;
-- project-defined net units;
-- a schema-compatibility `units_lp2021` field, explicitly `null` until an independent GLA LP2021 adjustment is reconstructed (see docs/methodology.md);
+- `units`: the group's net signed unit count (this is the field the dashboard's detail table and CSV export display as "Net units");
+- a schema-compatibility `units_lp2021` field, explicitly `null` until an independent GLA LP2021 adjustment is reconstructed (see docs/methodology.md) — it is not a net-units fallback and must not be read by dashboard code expecting a populated value;
 - inferred affordability grouping;
 - lightly normalised unit type; and
 - use class inferred from unit type.
 
-These are address-grouped analytical rows, not authoritative site or application records. See [methodology and limitations](docs/methodology.md).
+Detail rows carry no application identifier, exact reporting date or `borough` field — none of these are part of the grouping key, and `borough` is known to diverge from planning authority in roughly a fifth of raw unit facts, so it cannot be attached to a grouped row without ambiguity. These are address-grouped analytical rows, not authoritative site or application records. See [methodology and limitations](docs/methodology.md).
 
 ## 6. Implemented dashboard
 
@@ -105,11 +105,11 @@ Annual target references are hard-coded as 42,388 before 2021/22 and 52,287 from
 
 The builder:
 
-1. requests each financial year separately using an Elasticsearch scroll;
-2. de-duplicates application hits by Elasticsearch identifier;
-3. checks unique application hits against the API's reported total;
-4. holds the transformed result in memory until all requested years have been retrieved; and
-5. writes a compact index and one detail shard per financial year.
+1. requests every application hit in one Elasticsearch scroll covering the full requested history;
+2. de-duplicates application hits by canonical application identifier (PLD/source `id`, falling back to Elasticsearch `_id` only when necessary), hard-failing on a genuine duplicate;
+3. checks the total hits retrieved against the API's reported total once the scroll is exhausted;
+4. streams every stage to disk rather than holding the fetched or normalised dataset in memory — each named methodology variant re-reads the normalised fact set from disk independently, so peak memory stays bounded by a handful of small aggregate maps regardless of dataset size, not by the full ~2.7 million unit-fact count; and
+5. writes a compact index and one address-grouped detail shard per financial year, per variant.
 
 The validator rejects unexpected schema versions, invalid or discontinuous year indexes, shard-inventory mismatches, shards above 25 MiB, missing fields, duplicate address groups, inconsistent cubes, disagreements between detail and authority totals, and disagreements between authority totals and All London.
 

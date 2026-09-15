@@ -12,13 +12,13 @@ The following figures are the GLA's dated 10 December 2024 PLD extraction of net
 
 | Financial year | Reference | Current snapshot | Difference |
 |---|---:|---:|---:|
-| 2019/20 | 37,843 | 40,385 | +2,542 (+6.7%) |
-| 2020/21 | 30,703 | 34,229 | +3,526 (+11.5%) |
-| 2021/22 | 37,524 | 39,251 | +1,727 (+4.6%) |
-| 2022/23 | 32,053 | 33,803 | +1,750 (+5.5%) |
-| 2023/24 | 31,629 | 32,941 | +1,312 (+4.1%) |
+| 2019/20 | 37,843 | 41,601 | +3,758 (+9.9%) |
+| 2020/21 | 30,703 | 42,837 | +12,134 (+39.5%) |
+| 2021/22 | 37,524 | 46,704 | +9,180 (+24.5%) |
+| 2022/23 | 32,053 | 36,116 | +4,063 (+12.7%) |
+| 2023/24 | 31,629 | 36,077 | +4,448 (+14.1%) |
 
-“Current snapshot” refers to the artifact generated on 15 September 2026. A later PLD rebuild may change these values because the source database can be corrected retrospectively.
+“Current snapshot” refers to the `unit-root-fallback-losses` artifact generated on 15 September 2026, covering the full requested history (2004/05 onward) rather than a partial range. A later PLD rebuild may change these values because the source database can be corrected retrospectively.
 
 The validator prints these comparisons for visibility but deliberately does not fail on them. The differences are material and known. Making them hard release gates would imply equivalence that has not been established and could also reject legitimate retrospective PLD corrections.
 
