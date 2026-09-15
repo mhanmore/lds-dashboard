@@ -1,8 +1,9 @@
 import { createReadStream } from 'node:fs';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { createInterface } from 'node:readline';
 import { SCHEMA_VERSION, METHODOLOGY_VERSION, VARIANTS, sourceApplicationIdentity } from './rebuild-lib.mjs';
+import { readArrayRecords } from './ndjson-io.mjs';
 
 const root = process.env.PLD_OUTPUT_DIR || 'build/pld';
 const variant = process.env.PLD_VARIANT || 'unit-root-fallback-losses';
@@ -19,7 +20,7 @@ if (raw.count !== manifest.counts.unique_application_hits || raw.uniqueIds !== r
 const schema = JSON.parse(await readFile(`${root}/snapshots/${index.metadata.source_snapshot_id}/source-schema-report.json`));
 if (!schema.required_paths_valid) throw new Error('Required source schema paths failed');
 const factKeys = new Set(); let factCount = 0;
-for await (const fact of readJsonArrayRecords(`${root}/snapshots/${index.metadata.source_snapshot_id}/residential-unit-facts.json`)) { factKeys.add(fact.source_row_key); factCount++; }
+for await (const fact of readArrayRecords(`${root}/snapshots/${index.metadata.source_snapshot_id}/residential-unit-facts.json`)) { factKeys.add(fact.source_row_key); factCount++; }
 if (factKeys.size !== factCount || factCount !== manifest.counts.unit_records) throw new Error('Normalised fact count or identity mismatch');
 const dispositions = await validateDispositionRecords(`${dir}/fact-dispositions.json`, factKeys);
 if (dispositions.expectedFacts !== factCount || dispositions.assignedFacts !== factCount || dispositions.count !== factCount) throw new Error('Fact disposition count mismatch');
@@ -29,12 +30,13 @@ if (files.size !== disk.size || [...files].some(file => !disk.has(file))) throw 
 let recordCount = 0; const detail = new Map();
 for (const entry of index.years) {
   const path = `${dir}/${entry.file}`, shard = JSON.parse(await readFile(path));
-  if (shard.year !== entry.year || !Array.isArray(shard.records)) throw new Error(`Invalid shard ${entry.year}`);
+  if (shard.year !== entry.year || !Array.isArray(shard.records) || (await stat(path)).size > 25 * 1024 * 1024) throw new Error(`Invalid shard ${entry.year}`);
   const keys = new Set();
   for (const row of shard.records) {
-    for (const field of ['source_row_key', 'application_id', 'authority', 'address', 'reporting_date', 'reporting_date_source', 'change_type', 'affordability', 'dwelling_type', 'use_class']) if (typeof row[field] !== 'string' || !row[field]) throw new Error(`Missing ${field} in ${entry.year}`);
-    if (row.year !== entry.year || !Number.isFinite(row.units) || row.units_lp2021 !== null || keys.has(row.source_row_key)) throw new Error(`Invalid or duplicate detail row in ${entry.year}`);
-    keys.add(row.source_row_key); add(detail, `${row.authority}\0${row.year}`, row.units); recordCount++;
+    for (const field of ['authority', 'address', 'affordability', 'dwelling_type', 'use_class']) if (typeof row[field] !== 'string' || !row[field]) throw new Error(`Missing ${field} in ${entry.year}`);
+    const groupKey = [row.year, row.authority, row.address, row.affordability, row.dwelling_type, row.use_class].join('\0');
+    if (row.year !== entry.year || !Number.isFinite(row.units) || row.units === 0 || row.units_lp2021 !== null || keys.has(groupKey)) throw new Error(`Invalid or duplicate address group in ${entry.year}`);
+    keys.add(groupKey); add(detail, `${row.authority}\0${row.year}`, row.units); recordCount++;
   }
 }
 const summaries = new Set(), borough = new Map(), london = new Map();
@@ -61,15 +63,6 @@ async function validateRawApplications(path) {
     count++;
   }
   return { count, uniqueIds: ids.size };
-}
-async function* readJsonArrayRecords(path) {
-  const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity });
-  for await (let line of lines) {
-    line = line.trim();
-    if (!line || line === '[' || line === ']') continue;
-    if (line.endsWith(',')) line = line.slice(0, -1);
-    yield JSON.parse(line);
-  }
 }
 async function validateDispositionRecords(path, factKeys) {
   const keys = new Set(); let count = 0, expectedFacts = null, assignedFacts = null, inRecords = false;

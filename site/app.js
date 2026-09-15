@@ -197,7 +197,7 @@ async function renderTable() {
   if (request !== tableRequest) return;
   const records = [...yearRecords.entries()].filter(([year]) => year >= filters.from && year <= filters.to).flatMap(([, rows]) => rows);
   tableRows = records.filter(row => (!query || `${row.address} ${row.authority}`.toLowerCase().includes(query)) && (filters.authority === 'All London' || row.authority === filters.authority) && (filters.affordability === 'all' || row.affordability === filters.affordability) && (filters.dwellingType === 'all' || row.dwelling_type === filters.dwellingType) && (filters.useClass === 'all' || row.use_class === filters.useClass));
-  $('records').innerHTML = tableRows.slice(0, 500).map(row => `<tr><td>${esc(row.address)}</td><td>${esc(row.authority)}</td><td>${esc(row.year)}</td><td>${fmt(row.units_lp2021)}</td><td>${esc(row.affordability)}</td><td>${esc(row.dwelling_type)}</td><td>${esc(row.use_class)}</td></tr>`).join('') || '<tr><td colspan="7">No sites match these filters.</td></tr>';
+  $('records').innerHTML = tableRows.slice(0, 500).map(row => `<tr><td>${esc(row.address)}</td><td>${esc(row.authority)}</td><td>${esc(row.year)}</td><td>${fmt(row.units)}</td><td>${esc(row.affordability)}</td><td>${esc(row.dwelling_type)}</td><td>${esc(row.use_class)}</td></tr>`).join('') || '<tr><td colspan="7">No sites match these filters.</td></tr>';
   $('record-count').textContent = tableRows.length > 500 ? `Showing the first 500 of ${fmt(tableRows.length)} address-grouped records. CSV includes all filtered rows.` : `${fmt(tableRows.length)} address-grouped record${tableRows.length === 1 ? '' : 's'}`;
   $('download').disabled = false;
 }
@@ -224,6 +224,6 @@ function showStatus(message, error = false) { const element = $('status'); eleme
 function relativeAge(timestamp) { const days = Math.max(0, Math.floor((Date.now() - new Date(timestamp).getTime()) / 86400000)); return days < 1 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`; }
 function esc(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
 
-function download() { const rows = tableRows.map(row => [row.address, row.authority, row.year, row.units_lp2021, row.affordability, row.dwelling_type, row.use_class]); const csv = [['Address', 'Authority', 'Financial year', 'Net units', 'Affordability', 'Unit type', 'Use class'], ...rows].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n'); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); link.download = 'london-residential-completions.csv'; link.click(); URL.revokeObjectURL(link.href); }
+function download() { const rows = tableRows.map(row => [row.address, row.authority, row.year, row.units, row.affordability, row.dwelling_type, row.use_class]); const csv = [['Address', 'Authority', 'Financial year', 'Net units', 'Affordability', 'Unit type', 'Use class'], ...rows].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n'); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); link.download = 'london-residential-completions.csv'; link.click(); URL.revokeObjectURL(link.href); }
 
 load();

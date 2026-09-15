@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import { SCHEMA_VERSION, METHODOLOGY_VERSION, CATEGORY_MAPPING_VERSION, SUPERSESSION_POLICY, VARIANTS, sourceApplicationIdentity, normaliseHit, classifyFact, addSummary, emptySummaryRow, toDetailRow, compareSummary, compareDetail } from './rebuild-lib.mjs';
+import { SCHEMA_VERSION, METHODOLOGY_VERSION, CATEGORY_MAPPING_VERSION, SUPERSESSION_POLICY, VARIANTS, sourceApplicationIdentity, normaliseHit, classifyFact, addSummary, emptySummaryRow, addDetailGroup, finalizeDetailGroups, compareSummary, compareDetail } from './rebuild-lib.mjs';
 import { openArrayWriter, readArrayRecords, openLineWriter, readLinesIfExists } from './ndjson-io.mjs';
 
 // Everything here is written to and re-read from disk one record at a time.
@@ -89,15 +89,21 @@ async function buildSnapshot() {
 async function buildVariant(variantId) {
   const output = `${root}/variants/${variantId}`;
   const tmpDir = `${root}/.tmp-${snapshotId}-${variantId}`;
+  // Unlike snapshots/<id>, variants/<variantId> is not run-namespaced — each
+  // build is meant to replace the previous one for that variant, so clear
+  // it first rather than letting the 'wx' (fail-if-exists) array writers
+  // collide with a prior run's leftover files.
+  await rm(output, { recursive: true, force: true });
   await mkdir(`${output}/years`, { recursive: true });
   await mkdir(tmpDir, { recursive: true });
   try {
     const summaries = new Map();
-    const yearWriters = new Map();
-    async function yearWriter(year) {
-      if (!yearWriters.has(year)) yearWriters.set(year, await openLineWriter(`${tmpDir}/${year.replace('/', '-')}.ndjson`));
-      return yearWriters.get(year);
-    }
+    // Address-grouped detail rows collapse the raw fact stream onto a much
+    // smaller key (address x authority x year x affordability x dwelling
+    // type x use class — see docs/methodology.md), so unlike the raw facts
+    // this is small enough to accumulate directly in memory rather than
+    // spilling to disk per year.
+    const detailGroups = new Map();
     const dispositionsTmp = `${tmpDir}/dispositions.ndjson`;
     const dispTmpWriter = await openLineWriter(dispositionsTmp);
     const excWriter = await openArrayWriter(`${output}/exceptions.json`);
@@ -124,11 +130,9 @@ async function buildVariant(variantId) {
         for (const authority of [row.lpa_name || 'Unallocated', 'All London']) addSummary(summaries, authority, row);
         addSupersession(supersession, row);
         addYearStat(yearStats, row);
-        const writer = await yearWriter(row.year);
-        await writer.write(toDetailRow(row));
+        addDetailGroup(detailGroups, row);
       }
     }
-    for (const writer of yearWriters.values()) await writer.close();
     await dispTmpWriter.close();
     await excWriter.close();
     if (assignedCount !== factCount) throw new Error('Fact disposition accounting failed: every fact must have exactly one disposition');
@@ -136,14 +140,11 @@ async function buildVariant(variantId) {
     for (const year of outputYears) if (!summaries.has(`All London\0${year}`)) summaries.set(`All London\0${year}`, emptySummaryRow('All London', year));
     const sortedSummary = [...summaries.values()].sort(compareSummary);
 
-    let recordsTotal = 0;
-    for (const year of outputYears) {
-      const rows = [];
-      for await (const row of readLinesIfExists(`${tmpDir}/${year.replace('/', '-')}.ndjson`)) rows.push(row);
-      rows.sort(compareDetail);
-      recordsTotal += rows.length;
-      await writeJson(`${output}/years/${year.replace('/', '-')}.json`, { year, records: rows });
-    }
+    const records = finalizeDetailGroups(detailGroups).sort(compareDetail);
+    const recordsByYear = new Map();
+    for (const record of records) { if (!recordsByYear.has(record.year)) recordsByYear.set(record.year, []); recordsByYear.get(record.year).push(record); }
+    for (const year of outputYears) await writeJson(`${output}/years/${year.replace('/', '-')}.json`, { year, records: recordsByYear.get(year) || [] });
+    const recordsTotal = records.length;
 
     const disposition = { global: { expected_facts: factCount, assigned_facts: assignedCount, categories: sortedObject(categoryCounts) }, by_authority: byAuthority, by_gain_loss: byGainLoss, by_reporting_date_source: byDateSource };
     await writeDispositionReport(`${output}/fact-dispositions.json`, variantId, factCount, disposition, dispositionsTmp);

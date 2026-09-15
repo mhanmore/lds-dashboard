@@ -66,7 +66,7 @@ Detail rows contain:
 - planning authority;
 - financial year;
 - project-defined net units;
-- a schema-compatibility `units_lp2021` value currently identical to net units;
+- a schema-compatibility `units_lp2021` field, explicitly `null` until an independent GLA LP2021 adjustment is reconstructed (see docs/methodology.md);
 - inferred affordability grouping;
 - lightly normalised unit type; and
 - use class inferred from unit type.

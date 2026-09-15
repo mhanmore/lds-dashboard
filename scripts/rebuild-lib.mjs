@@ -181,12 +181,30 @@ function selectDate(fact, variant) {
 function unusableDate(date, source, reason) { return { date: null, source, reason, invalid: Boolean(date && date.date_status !== 'missing') }; }
 
 export function assemble(rows) {
-  const summaries = new Map(), details = [];
+  const summaries = new Map(), groups = new Map();
   for (const row of rows) {
     for (const authority of [row.lpa_name || 'Unallocated', 'All London']) addSummary(summaries, authority, row);
-    details.push(toDetailRow(row));
+    addDetailGroup(groups, row);
   }
-  return { annual_summary: [...summaries.values()].sort(compareSummary), records: details.sort(compareDetail) };
+  return { annual_summary: [...summaries.values()].sort(compareSummary), records: finalizeDetailGroups(groups).sort(compareDetail) };
+}
+
+// Detail rows are grouped by address text, authority, financial year,
+// affordability, dwelling type and inferred use class (see
+// docs/methodology.md "Aggregation and dashboard behaviour") — deliberately
+// coarser than a raw unit fact: they carry no application identifier or
+// exact reporting date, only the financial year already encoded in the
+// grouping key. Groups whose signed units net to zero are dropped. Exported
+// so build-data.mjs can accumulate one small group Map per variant while
+// streaming facts in from disk, instead of holding every raw included row.
+export function detailGroupKey(row) { return [row.year, row.lpa_name || 'Unallocated', row.address, row.affordability, row.dwelling_type, row.inferred_use_class].join('\0'); }
+export function addDetailGroup(map, row) {
+  const key = detailGroupKey(row);
+  if (!map.has(key)) map.set(key, { authority: row.lpa_name || 'Unallocated', address: row.address, year: row.year, affordability: row.affordability, dwelling_type: row.dwelling_type, use_class: row.inferred_use_class, units: 0 });
+  map.get(key).units += row.units;
+}
+export function finalizeDetailGroups(map) {
+  return [...map.values()].filter(group => group.units !== 0).map(group => ({ authority: group.authority, address: group.address, year: group.year, units: group.units, units_lp2021: null, affordability: group.affordability, dwelling_type: group.dwelling_type, use_class: group.use_class }));
 }
 
 // Exported so build-data.mjs can accumulate a single small summary Map while
@@ -200,7 +218,6 @@ export function addSummary(map, authority, row) {
   const a = bucket.cube[row.affordability] ||= {}; const d = a[row.dwelling_type] ||= {}; add(d, row.inferred_use_class, row.units);
 }
 export function emptySummaryRow(authority, year) { return { authority, year, completions: 0, target: authority === 'All London' ? target(year) : null, affordability: {}, dwelling_type: {}, use_class: {}, cube: {} }; }
-export function toDetailRow(row) { return { source_row_key: row.source_row_key, application_id: row.application_id, lpa_app_no: row.lpa_app_no, authority: row.lpa_name || 'Unallocated', borough: row.borough || null, address: row.address, year: row.year, units: row.units, units_lp2021: null, reporting_date: row.reporting_date, reporting_date_source: row.reporting_date_source, change_type: row.change_type, phase_detail: row.phase_detail_raw, affordability: row.affordability, dwelling_type: row.dwelling_type, use_class: row.inferred_use_class, tenure_raw: row.tenure_raw, unit_type_raw: row.unit_type_raw, unit_development_type_raw: row.unit_development_type_raw, supersession_status: row.supersession_status }; }
 function add(object, key, value) { object[key] = (object[key] || 0) + value; }
 function exception(fact, reason) { return { source_row_key: fact.source_row_key, application_id: fact.application_id, authority: fact.lpa_name || 'Unallocated', change_type: fact.change_type || null, reason }; }
 function address(app) { return [app.site_name, app.site_number, app.street_name, app.secondary_street_name, app.locality, app.postcode].filter(Boolean).join(', ') || 'Address not recorded'; }
@@ -213,4 +230,4 @@ function classify(value, rules, fallback, exact = false) { const text = String(v
 function supersessionStatus(fact) { return fact.superseded_date_raw || fact.superseded_by_lpa_app_no || fact.application_superseding_details.length ? 'flagged' : 'not_flagged'; }
 function nullable(value) { return value === null || value === undefined || String(value).trim() === '' ? null : String(value); }
 export function compareSummary(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority); }
-export function compareDetail(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority) || a.application_id.localeCompare(b.application_id) || a.source_row_key.localeCompare(b.source_row_key); }
+export function compareDetail(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority) || a.address.localeCompare(b.address) || a.affordability.localeCompare(b.affordability) || a.dwelling_type.localeCompare(b.dwelling_type) || a.use_class.localeCompare(b.use_class); }
