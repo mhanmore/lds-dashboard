@@ -11,6 +11,10 @@ let tableRequest = 0;
 let defaultFromYear;
 let dimension = state.view && dimensionLabels[state.view] ? state.view : 'affordability';
 
+document.querySelector('.publication-note-close')?.addEventListener('click', event => {
+  event.currentTarget.closest('.publication-note').hidden = true;
+});
+
 async function load() {
   try {
     const response = await fetch('data/index.json');
