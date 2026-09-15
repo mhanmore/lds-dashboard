@@ -10,7 +10,9 @@ export default {
     const cached = await env.DATA.get(key, 'json');
     if (!cached) return json({ error: 'baseline_missing', message: 'No baseline artifact is available. Run the build-time backfill.' }, 503);
     const stale = Date.now() - new Date(cached.metadata.generated_at).getTime() >= FRESH_MS;
-    if (stale) {
+    // Refresh is opt-in from the dashboard. Filters and chart redraws never
+    // touch this endpoint, preventing accidental repeated upstream requests.
+    if (stale || url.searchParams.get('refresh') === '1') {
       // The lock is deliberately short-lived. A durable object can replace this
       // best-effort single-flight lock for deployments requiring strict coalescing.
       const lock = await env.DATA.get('refresh-lock');

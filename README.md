@@ -8,17 +8,17 @@ A lightweight, static recreation of the former Greater London Authority resident
 npm run dev
 ```
 
-Then open `http://localhost:4173`. The sample artifact is marked as `demo` in `site/data/data.json`.
+Then open `http://localhost:4173`. The dashboard uses a checked-in, pre-aggregated local artifact. Visitors never query the PLD API when filtering or redrawing a chart.
 
 ## Build live data
 
-The historical PLD backfill is build-time only:
+The historical PLD backfill is build-time only and queries the public Planning London Datahub API directly:
 
 ```sh
-PLD_EXPORT_URL='https://your-verified-pld-export' npm run build:data
+PLD_FIRST_YEAR=2019 PLD_LAST_YEAR=2025 npm run build:data
 ```
 
-The endpoint must return either `{ "records": [...] }` or an Elasticsearch response with `hits.hits`. Confirm the PLD technical documentation and field mapping before using this in production. The worker never attempts a full backfill; it serves a KV baseline and performs only a bounded, configured refresh.
+The API endpoint and required public-read header have safe defaults. `PLD_EXPORT_URL` and `PLD_API_ALLOW_REQUEST` are available only if the API contract changes. The importer compresses dwelling records into authority-year aggregates and site summaries before writing the local artifact. The worker never attempts a full backfill; it serves a KV baseline and performs only a bounded, configured refresh.
 
 ## Deploy the refresh worker
 

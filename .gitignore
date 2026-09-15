@@ -1,0 +1,5 @@
+# Local npm install state (this project has no runtime npm dependencies)
+node_modules/
+.npm/
+npm-debug.log*
+package-lock.json

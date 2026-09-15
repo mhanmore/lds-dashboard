@@ -1,32 +1,97 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 
-// Build-time only: this script is never called by the visitor-facing worker.
-// Set PLD_EXPORT_URL to a verified, narrow PLD export endpoint. The endpoint
-// may return { records: [...] } or an Elasticsearch-style { hits: { hits: [] } }.
-const endpoint = process.env.PLD_EXPORT_URL;
-if (!endpoint) throw new Error('PLD_EXPORT_URL is required; runtime must not perform a historical backfill');
-const response = await fetch(endpoint, { headers: { accept: 'application/json' } });
-if (!response.ok) throw new Error(`PLD export failed with HTTP ${response.status}`);
-const payload = await response.json();
-const records = payload.records || payload.hits?.hits?.map(hit => ({ ...hit._source, _id: hit._id })) || [];
-if (!records.length) throw new Error('PLD export returned no records; refusing to replace baseline');
+// Public, read-only Planning London Datahub Elasticsearch endpoint. The header
+// is required by the API's published connection documentation.
+const endpoint = process.env.PLD_EXPORT_URL || 'https://planningdata.london.gov.uk/api-guest/applications/_search';
+const apiHeader = process.env.PLD_API_ALLOW_REQUEST || 'be2rmRnt&';
+const firstYear = Number(process.env.PLD_FIRST_YEAR || 2019);
+const now = new Date();
+// Default to the most recently finished financial year; partial current-year
+// returns are useful for analysis, but should always be requested explicitly.
+const lastYear = Number(process.env.PLD_LAST_YEAR || (now.getUTCMonth() < 3 ? now.getUTCFullYear() - 2 : now.getUTCFullYear() - 1));
+const pageSize = 1_000;
 
-const years = [...new Set(records.map(record => year(record.completion_year || record.financial_year || record.year)).filter(Boolean))].sort();
-const annual_summary = years.map(financialYear => {
-  const rows = records.filter(record => year(record.completion_year || record.financial_year || record.year) === financialYear);
-  const completions = rows.reduce((sum, record) => sum + number(record.units_lp2021 ?? record.net_units ?? record.units), 0);
-  const affordability = group(rows, record => record.affordability || 'Not known / not applicable');
-  const dwelling_type = group(rows, record => record.dwelling_type || 'Other');
-  return { year: financialYear, authority: 'All London', completions, target: target(financialYear), affordability, dwelling_type };
-});
-const output = { metadata: { generated_at: new Date().toISOString(), source: 'Planning London Datahub', schema_version: 1, methodology_version: 1, records: records.length }, annual_summary, records: records.map(normalise) };
-if (output.annual_summary.some(row => row.completions < 0)) throw new Error('Validation failed: negative annual total');
+if (!Number.isInteger(firstYear) || !Number.isInteger(lastYear) || firstYear > lastYear) throw new Error('PLD_FIRST_YEAR and PLD_LAST_YEAR must form a valid inclusive range');
+
+const units = [];
+for (let startYear = firstYear; startYear <= lastYear; startYear += 1) {
+  const yearRecords = await fetchYear(startYear);
+  units.push(...yearRecords);
+  console.log(`${financialYear(startYear)}: ${yearRecords.length} completed residential units`);
+}
+if (!units.length) throw new Error('PLD returned no completed residential units; refusing to replace the existing artifact');
+
+const annual_summary = summarise(units);
+const records = aggregateSites(units);
+const output = { metadata: { generated_at: new Date().toISOString(), source: 'Planning London Datahub public API', source_url: 'https://planningdata.london.gov.uk/api-guest/', schema_version: 2, methodology_version: 1, unit_records: units.length, records: records.length, demo: false }, annual_summary, records };
 await mkdir('site/data', { recursive: true });
 await writeFile('site/data/data.json', JSON.stringify(output));
-console.log(`Wrote ${records.length} records across ${annual_summary.length} financial years`);
+console.log(`Wrote ${records.length} compact site records and ${annual_summary.length} authority-year summaries from ${units.length} live PLD unit records`);
 
-function number(value) { const n = Number(value); return Number.isFinite(n) ? n : 0; }
-function year(value) { if (!value) return null; const text = String(value); const match = text.match(/(20\d\d)[-/](\d\d)/); if (match) return `${match[1]}/${match[2].slice(-2)}`; return text.match(/^20\d\d$/) ? `${text}/${String(Number(text)+1).slice(-2)}` : null; }
-function group(rows, key) { return rows.reduce((result, row) => { const k=key(row); result[k]=(result[k]||0)+number(row.units_lp2021 ?? row.net_units ?? row.units); return result; }, {}); }
-function normalise(row) { return { address: row.address || row.site_address || 'Address not recorded', authority: row.authority || row.planning_authority || 'Not known', year: year(row.completion_year || row.financial_year || row.year), units: number(row.units), units_lp2021: number(row.units_lp2021 ?? row.net_units ?? row.units), affordability: row.affordability || 'Not known / not applicable' }; }
-function target(value) { return value >= '2021/22' ? 52290 : 42500; }
+async function fetchYear(startYear) {
+  const hits = [], from = `01/04/${startYear}`, to = `01/04/${startYear + 1}`;
+  const unitCompletionDate = 'application_details.residential_details.residential_units.actual_completion_date';
+  const headers = { accept: 'application/json', 'content-type': 'application/json', 'X-API-AllowRequest': apiHeader };
+  const scrollEndpoint = process.env.PLD_SCROLL_URL || endpoint.replace(/applications\/_search(?:\?.*)?$/, '_search/scroll');
+  let scrollId = null, expected = null;
+  for (;;) {
+    const url = scrollId ? scrollEndpoint : `${endpoint}${endpoint.includes('?') ? '&' : '?'}scroll=2m`;
+    const body = scrollId ? { scroll: '2m', scroll_id: scrollId } : { size: pageSize, sort: ['_doc'], track_total_hits: true, query: { nested: { path: 'application_details.residential_details.residential_units', query: { range: { [unitCompletionDate]: { gte: from, lt: to, format: 'dd/MM/yyyy' } } } } }, _source: ['lpa_name', 'site_name', 'site_number', 'street_name', 'postcode', 'actual_completion_date', 'application_details.residential_details.residential_units'] };
+    const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!response.ok) throw new Error(`PLD query for ${financialYear(startYear)} failed with HTTP ${response.status}`);
+    const page = await response.json();
+    scrollId = page._scroll_id;
+    expected ??= page.hits?.total?.value;
+    const pageHits = page.hits?.hits || [];
+    if (!pageHits.length) break;
+    hits.push(...pageHits);
+  }
+  const uniqueHits = [...new Map(hits.map(hit => [hit._id, hit])).values()];
+  if (expected !== null && uniqueHits.length !== expected) throw new Error(`${financialYear(startYear)} returned ${uniqueHits.length} unique applications; expected ${expected}`);
+  return uniqueHits.flatMap(hit => normaliseApplication(hit._source, startYear));
+}
+
+function normaliseApplication(application, startYear) {
+  const units = application.application_details?.residential_details?.residential_units || [];
+  const address = [application.site_name, application.site_number, application.street_name, application.postcode].filter(Boolean).join(', ') || 'Address not recorded';
+  return units.filter(unit => unit.actual_completion_date && completionYear(unit.actual_completion_date) === startYear).map(unit => ({ address, authority: application.lpa_name || 'Not known', year: financialYear(startYear), units: unit.change_type === 'Loss' ? -1 : 1, units_lp2021: unit.change_type === 'Loss' ? -1 : 1, affordability: affordability(unit.tenure), dwelling_type: dwellingType(unit.unit_type), use_class: useClass(unit.unit_type) }));
+}
+
+function summarise(rows) {
+  const buckets = new Map();
+  for (const row of rows) {
+    for (const authority of [row.authority, 'All London']) {
+      const key = `${authority}\u0000${row.year}`;
+      if (!buckets.has(key)) buckets.set(key, { authority, year: row.year, completions: 0, target: authority === 'All London' ? target(row.year) : null, affordability: {}, dwelling_type: {}, use_class: {}, cube: {} });
+      const bucket = buckets.get(key), value = row.units_lp2021;
+      bucket.completions += value;
+      bucket.affordability[row.affordability] = (bucket.affordability[row.affordability] || 0) + value;
+      bucket.dwelling_type[row.dwelling_type] = (bucket.dwelling_type[row.dwelling_type] || 0) + value;
+      bucket.use_class[row.use_class] = (bucket.use_class[row.use_class] || 0) + value;
+      const byDwelling = bucket.cube[row.affordability] ||= {};
+      const byUseClass = byDwelling[row.dwelling_type] ||= {};
+      byUseClass[row.use_class] = (byUseClass[row.use_class] || 0) + value;
+    }
+  }
+  return [...buckets.values()].sort((a, b) => a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority));
+}
+
+function aggregateSites(rows) {
+  const buckets = new Map();
+  for (const row of rows) {
+    const key = [row.address, row.authority, row.year, row.affordability, row.dwelling_type, row.use_class].join('\u0000');
+    if (!buckets.has(key)) buckets.set(key, { ...row, units: 0, units_lp2021: 0 });
+    const bucket = buckets.get(key);
+    bucket.units += row.units;
+    bucket.units_lp2021 += row.units_lp2021;
+  }
+  return [...buckets.values()].filter(row => row.units_lp2021 !== 0);
+}
+
+function completionYear(date) { const [, month, year] = String(date).split('/').map(Number); return month && year ? (month < 4 ? year - 1 : year) : null; }
+function financialYear(startYear) { return `${startYear}/${String(startYear + 1).slice(-2)}`; }
+function affordability(tenure) { if (!tenure || /not known|unknown/i.test(tenure)) return 'Not known'; if (/not applicable|n\/a/i.test(tenure)) return 'n/a'; return /affordable|social|shared|living rent|intermediate/i.test(tenure) ? 'Affordable' : /market/i.test(tenure) ? 'Market' : tenure; }
+function dwellingType(value) { const type = String(value || '').trim(); if (!type) return 'Other'; if (/^hmo$/i.test(type)) return 'C4 small HMO'; if (/^flat apartment maisonette$/i.test(type)) return 'Flat Apartment Maisonette'; if (/^studio bedsit$/i.test(type)) return 'Studio Bedsit'; if (/^house$/i.test(type)) return 'House or Bungalow'; return type; }
+function useClass(unitType) { const type = String(unitType || ''); if (/C4|HMO/i.test(type)) return 'C4 small HMO'; if (/student|co living|communal|other/i.test(type)) return 'Other residential'; return type ? 'C3 dwelling' : 'Not known'; }
+function group(rows, key) { return rows.reduce((result, row) => { const name = key(row); result[name] = (result[name] || 0) + row.units_lp2021; return result; }, {}); }
+function target(year) { return year >= '2021/22' ? 52287 : 42388; }
