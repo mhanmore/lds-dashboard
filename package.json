@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "python3 -m http.server 4173 -d site",
     "build:data": "node scripts/build-data.mjs",
+    "capture:baseline": "node scripts/capture-baseline.mjs",
     "validate:data": "node scripts/validate-data.mjs",
-    "test": "npm run validate:data && node --check site/app.js && node --check scripts/build-data.mjs && node --check scripts/merge-data.mjs"
+    "test:rebuild": "node test/rebuild.test.mjs",
+    "test": "npm run test:rebuild && node --check site/app.js && node --check scripts/build-data.mjs && node --check scripts/capture-baseline.mjs && node --check scripts/validate-data.mjs && node --check scripts/merge-data.mjs"
   }
 }

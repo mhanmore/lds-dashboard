@@ -1,0 +1,14 @@
+[
+  {
+    "_id": "app-1",
+    "_source": {
+      "id": "app-1", "lpa_app_no": "A/1", "lpa_name": "Example Authority", "borough": "Example Borough", "site_name": "Example Site", "postcode": "E1 1AA", "actual_commencement_date": "01/03/2020", "actual_completion_date": "01/05/2021",
+      "application_details": { "residential_details": { "residential_units": [
+        { "change_type": "Gain", "actual_completion_date": "01/05/2021", "actual_commencement_date": "01/04/2020", "unit_no": "G1", "unit_type": "House", "tenure": "Market" },
+        { "change_type": "Loss", "actual_completion_date": "01/05/2021", "actual_commencement_date": "15/03/2020", "unit_no": "L1", "unit_type": "House", "tenure": "Market" },
+        { "change_type": "Loss", "actual_completion_date": "01/05/2021", "unit_no": "L2", "unit_type": "HMO", "tenure": "Social rent" },
+        { "change_type": "Unknown", "actual_completion_date": "31/02/2021", "unit_no": "X1" }
+      ] } }
+    }
+  }
+]

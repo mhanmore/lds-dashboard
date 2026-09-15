@@ -2,13 +2,13 @@
 
 ## What validation establishes
 
-`npm run validate:data` checks the internal structure of the generated static artifact. It verifies the schema and methodology versions, continuous financial-year index, exact shard inventory, shard size, required fields, unique address-group keys, summary-cube arithmetic, agreement between detail and authority summaries, and agreement between authority totals and All London totals.
+`npm run validate:data` validates one named rebuild variant (default `unit-root-fallback-losses`). It checks snapshot/schema provenance, source-schema validation, exact shard inventory, required application/unit identity and reporting-date fields, unique source-row keys, summary-cube arithmetic, agreement between detail and authority summaries, and agreement between authority totals and All London totals.
 
 Passing these checks means the files are internally consistent enough to publish. It does **not** establish that the source data is complete or correct, that every relevant record has been included, or that the former GLA dashboard methodology has been reproduced.
 
 ## Historical reference figures
 
-The following figures were recorded during the reconstruction as London-wide net self-contained completion totals from surviving material. They should be treated as provisional reference values: their precise original table and measure definition have not yet been independently documented in this repository.
+The following figures are the GLA's dated 10 December 2024 PLD extraction of net self-contained C3/C4 completions. They are an informational benchmark, not a release gate: live PLD may contain retrospective corrections and the reconstructed scope has not yet been demonstrated equivalent. See the GLA's [housing supply data sources](https://data.london.gov.uk/housing/housing-supply-data-sources) for the wider measure context.
 
 | Financial year | Reference | Current snapshot | Difference |
 |---|---:|---:|---:|
@@ -22,7 +22,7 @@ The following figures were recorded during the reconstruction as London-wide net
 
 The validator prints these comparisons for visibility but deliberately does not fail on them. The differences are material and known. Making them hard release gates would imply equivalence that has not been established and could also reject legitimate retrospective PLD corrections.
 
-Likely contributors include the unreconstructed `Units LP2021` rules, changes to PLD records since the historic publication, and differences in inclusion or deduplication logic. Those explanations are hypotheses, not findings.
+One confirmed methodological difference in the old importer is that it dated losses by completion; the rebuilt experimental variants can instead date losses by commencement. Remaining candidates—including retrospective PLD changes, C3/C4 scope, missing dates, supersession and deduplication—remain hypotheses until reconciled at application and borough level. `Units LP2021` is a separate, unreconstructed non-self-contained-accommodation measure and is not an explanation for a self-contained C3/C4 benchmark difference.
 
 ## Publication position
 

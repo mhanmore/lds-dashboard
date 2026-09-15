@@ -8,24 +8,24 @@ Source data: Greater London Authority, Planning London Datahub. The GLA cannot w
 
 ## Source and snapshot process
 
-`npm run build:data` reads the public, read-only Planning London Datahub Elasticsearch API. By default it requests every financial year from 2004/05 through the most recently completed financial year. Each year is retrieved using an Elasticsearch scroll, application hits are de-duplicated by their Elasticsearch identifier, and the number of unique applications is checked against the API's reported hit count.
+The rebuild loader uses a strict pipeline: it extracts one dated, immutable PLD application snapshot; validates the observed source shape; normalises conventional residential-unit facts; then applies named reporting-date variants. By default `npm run build:data` writes development artefacts under `build/pld`, never over the published `site/data` directory. The snapshot manifest records counts, versions and a checksum for the raw NDJSON input.
 
 The generated static artifact consists of:
 
 - `site/data/index.json`, containing metadata, the shard inventory and authority-year summary cubes; and
 - `site/data/years/*.json`, containing address-grouped detail rows for individual financial years.
 
-The checked-in artifact currently uses schema version 3 and methodology version 2. The browser reads only these local files. It never queries PLD when a filter or chart changes.
+Each development variant records its snapshot ID, schema version, methodology ID/version, category-mapping version and supersession policy. The browser continues to read only the separately published local files; it never queries PLD when a filter or chart changes.
 
 The intended production arrangement is an external weekly VPS job which pulls the repository, builds and validates a temporary snapshot, replaces `site/data` only after validation succeeds, and pushes the result. GitHub Pages then republishes the static site. That external schedule and credential are not part of this repository and must be configured separately.
 
 ## Completion measure
 
-The importer reads nested `application_details.residential_details.residential_units` entries from PLD application documents. A unit is included when it has an `actual_completion_date` in the requested financial year. A unit whose `change_type` is `Loss` contributes −1; every other included unit contributes +1.
+The loader reads nested `application_details.residential_details.residential_units` entries from PLD application documents and preserves the application ID, LPA reference, authority, borough, raw classifications, unit/root dates, phase and supersession fields. It produces four explicitly named variants. In the recommended test variant, `unit-root-fallback-losses`, gains use a unit completion date (falling back to root completion) and losses use a unit commencement date (falling back to root commencement). This implements the documented candidate rule that gains are dated to completion and losses to commencement, but remains a methodological test rather than proof of exact former-dashboard behaviour. Missing, invalid or unexpected values are preserved as exceptions rather than silently coerced.
 
 This is a project-defined net count of the retrieved self-contained unit entries. It is not the complete London Plan housing-supply measure. In particular, the importer does not currently include PLD's other-residential-accommodation or non-permanent-dwellings collections. The GLA explains that total net housing supply combines conventional self-contained completions with non-conventional accommodation such as hostel and halls-of-residence bedrooms.
 
-The output fields `units` and `units_lp2021` are currently identical. No independent GLA `Units LP2021` adjustment has been reconstructed. The latter name is retained only for schema compatibility and must not be read as confirmation that the former dashboard's adjusted measure has been reproduced.
+No independent GLA `Units LP2021` adjustment has been reconstructed. In the rebuilt canonical output `units_lp2021` is explicitly `null`, never copied from `units`; it must not be read as confirmation that the former dashboard's adjusted measure has been reproduced.
 
 ## Classifications
 
