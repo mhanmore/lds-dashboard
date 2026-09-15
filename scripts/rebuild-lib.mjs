@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 export const SCHEMA_VERSION = 4;
 export const METHODOLOGY_VERSION = 1;
-export const CATEGORY_MAPPING_VERSION = 'tenure-regex-v1';
+export const CATEGORY_MAPPING_VERSION = 'category-rules-v2';
 export const SUPERSESSION_POLICY = 'retain-and-flag-v1';
 export const VARIANTS = {
   'completion-date-all': { lossDate: 'unit_completion', gainFallback: false, lossFallback: false },
@@ -11,7 +11,46 @@ export const VARIANTS = {
   'unit-root-fallback-losses': { lossDate: 'unit_commencement', gainFallback: true, lossFallback: true }
 };
 
+// This is deliberately data, rather than an implicit contract hidden in the
+// classifiers below. Raw source values are retained on every fact.
+export const CATEGORY_RULES = {
+  affordability: [
+    { label: 'Not known', pattern: 'not known|unknown' },
+    { label: 'n/a', pattern: 'not applicable|n/a' },
+    { label: 'Affordable', pattern: 'affordable|social|shared|living rent|intermediate' },
+    { label: 'Market', pattern: 'market' }
+  ],
+  dwelling_type: [
+    { label: 'C4 small HMO', exact: 'hmo' },
+    { label: 'Flat Apartment Maisonette', exact: 'flat apartment maisonette' },
+    { label: 'Studio Bedsit', exact: 'studio bedsit' },
+    { label: 'House or Bungalow', exact: 'house' }
+  ],
+  use_class: [
+    { label: 'C4 small HMO', pattern: '\\bc4\\b|\\bhmo\\b', evidence: 'unit_type or unit_development_type' },
+    { label: 'Other residential', pattern: 'student|co[ -]?living|communal', evidence: 'unit_type or unit_development_type' },
+    { label: 'C3 dwelling', pattern: '^house$|flat apartment maisonette|studio bedsit|^flat$|^apartment$|^maisonette$', evidence: 'unit_type' }
+  ]
+};
+
 export function sha256(value) { return createHash('sha256').update(value).digest('hex'); }
+export function sourceApplicationIdentity(hit) {
+  const source = hit?._source || hit || {};
+  const elasticsearchId = nullable(hit?._id);
+  const sourceId = nullable(source.id);
+  // A bare application object can have id at its root; preserve it separately
+  // only when it is not the same field as _source.id.
+  const hitId = hit?._source ? nullable(hit?.id) : null;
+  const candidates = [sourceId, elasticsearchId, hitId].filter(Boolean);
+  return {
+    application_id: sourceId || elasticsearchId || hitId || null,
+    elasticsearch_id: elasticsearchId,
+    source_id: sourceId,
+    hit_id: hitId,
+    conflicting_identifiers: [...new Set(candidates)].length > 1,
+    identifiers: { elasticsearch_id: elasticsearchId, source_id: sourceId, hit_id: hitId }
+  };
+}
 export function financialYear(date) {
   if (!date?.parsed_date) return null;
   const [year, month] = date.parsed_date.split('-').map(Number);
@@ -41,19 +80,23 @@ export function normaliseApplications(hits) {
   const facts = [], exceptions = [], apps = [];
   for (const hit of hits) {
     const application = hit._source || hit;
-    const applicationId = String(application.id || hit._id || 'missing-application-id');
+    const identity = sourceApplicationIdentity(hit);
+    if (!identity.application_id) throw new Error('Source hit has no application identifier');
+    const applicationId = identity.application_id;
     const rootCommencement = parsePldDate(application.actual_commencement_date);
     const rootCompletion = parsePldDate(application.actual_completion_date);
     const residential = application.application_details?.residential_details || {};
     const sourceUnits = Array.isArray(residential.residential_units) ? residential.residential_units : [];
-    apps.push({ application_id: applicationId, elasticsearch_id: hit._id || null, lpa_app_no: application.lpa_app_no || null, lpa_name: application.lpa_name || null, borough: application.borough || null, unit_array_count: sourceUnits.length, total_no_existing_residential_units: residential.total_no_existing_residential_units ?? null, total_no_proposed_residential_units: residential.total_no_proposed_residential_units ?? null });
+    apps.push({ application_id: applicationId, elasticsearch_id: identity.elasticsearch_id, source_id: identity.source_id, hit_id: identity.hit_id, identifier_conflict: identity.conflicting_identifiers, lpa_app_no: application.lpa_app_no || null, lpa_name: application.lpa_name || null, borough: application.borough || null, unit_array_count: sourceUnits.length, total_no_existing_residential_units: residential.total_no_existing_residential_units ?? null, total_no_proposed_residential_units: residential.total_no_proposed_residential_units ?? null });
     sourceUnits.forEach((unit, position) => {
       const change = String(unit.change_type || '').trim();
       const unitCommencement = parsePldDate(unit.actual_commencement_date);
       const unitCompletion = parsePldDate(unit.actual_completion_date);
       const sourceRowKey = `${applicationId}:${position}:${sha256(JSON.stringify(unit))}`;
       const fact = {
-        source_row_key: sourceRowKey, application_id: applicationId, elasticsearch_id: hit._id || null,
+        // Snapshot source-row identity: deterministic only for this frozen
+        // payload; it is not a longitudinal PLD unit identifier.
+        source_row_key: sourceRowKey, application_id: applicationId, elasticsearch_id: identity.elasticsearch_id, source_id: identity.source_id, hit_id: identity.hit_id,
         lpa_app_no: application.lpa_app_no || null, lpa_name: application.lpa_name || null, borough: application.borough || null,
         address: address(application), uprn: application.uprn || null, bo_system: application.bo_system || null,
         application_development_type_raw: application.development_type || null, application_last_updated: application.last_updated || null,
@@ -77,30 +120,38 @@ export function normaliseApplications(hits) {
 export function applyVariant(facts, variantId, firstYear, lastYear) {
   const variant = VARIANTS[variantId];
   if (!variant) throw new Error(`Unknown methodology variant: ${variantId}`);
-  const included = [], exceptions = [];
+  const included = [], exceptions = [], dispositions = [];
   for (const fact of facts) {
-    if (!fact.change_type) { exceptions.push({ ...exception(fact, 'unrecognised_or_missing_change_type') }); continue; }
+    if (!fact.change_type) {
+      const reason = fact.change_type_raw == null || !String(fact.change_type_raw).trim() ? 'missing_change_type' : 'unrecognised_change_type';
+      const item = { ...exception(fact, reason) }; exceptions.push(item); dispositions.push(item); continue;
+    }
     const selected = selectDate(fact, variant);
-    if (!selected.date?.parsed_date) { exceptions.push({ ...exception(fact, selected.reason), reporting_date_source: selected.source }); continue; }
+    if (!selected.date?.parsed_date) {
+      const reason = selected.invalid ? 'invalid_required_reporting_date' : 'missing_required_reporting_date';
+      const item = { ...exception(fact, reason), reporting_date_source: selected.source || null, date_reason: selected.reason }; exceptions.push(item); dispositions.push(item); continue;
+    }
     const year = financialYear(selected.date);
-    if (yearStart(year) < firstYear || yearStart(year) > lastYear) continue;
-    included.push({ ...fact, year, units: fact.change_type === 'Loss' ? -1 : 1, reporting_date: selected.date.parsed_date, reporting_date_source: selected.source, fallback_reason: selected.fallback_reason || null, affordability: affordability(fact.tenure_raw), dwelling_type: dwellingType(fact.unit_type_raw), inferred_use_class: inferredUseClass(fact.unit_type_raw), supersession_status: supersessionStatus(fact) });
+    if (yearStart(year) < firstYear || yearStart(year) > lastYear) { dispositions.push({ ...exception(fact, 'valid_reporting_date_outside_requested_window'), reporting_date: selected.date.parsed_date, reporting_date_source: selected.source, year }); continue; }
+    const row = { ...fact, year, units: fact.change_type === 'Loss' ? -1 : 1, reporting_date: selected.date.parsed_date, reporting_date_source: selected.source, fallback_reason: selected.fallback_reason || null, affordability: affordability(fact.tenure_raw), dwelling_type: dwellingType(fact.unit_type_raw), inferred_use_class: inferredUseClass(fact.unit_type_raw, fact.unit_development_type_raw), supersession_status: supersessionStatus(fact) };
+    included.push(row); dispositions.push({ ...exception(fact, 'included_in_requested_window'), year, reporting_date_source: selected.source });
   }
-  return { included, exceptions };
+  return { included, exceptions, dispositions };
 }
 
 function selectDate(fact, variant) {
   if (fact.change_type === 'Gain') {
     if (fact.unit_completion_date.parsed_date) return { date: fact.unit_completion_date, source: 'unit_completion' };
     if (variant.gainFallback && fact.root_completion_date.parsed_date) return { date: fact.root_completion_date, source: 'root_completion', fallback_reason: 'missing_unit_completion' };
-    return { date: null, source: null, reason: 'missing_gain_completion_date' };
+    return unusableDate(fact.unit_completion_date, 'unit_completion', 'missing_gain_completion_date');
   }
-  if (variant.lossDate === 'unit_completion') return fact.unit_completion_date.parsed_date ? { date: fact.unit_completion_date, source: 'unit_completion' } : { date: null, reason: 'missing_loss_completion_date' };
-  if (variant.lossDate === 'root_commencement') return fact.root_commencement_date.parsed_date ? { date: fact.root_commencement_date, source: 'root_commencement' } : { date: null, reason: 'missing_root_commencement_date' };
+  if (variant.lossDate === 'unit_completion') return fact.unit_completion_date.parsed_date ? { date: fact.unit_completion_date, source: 'unit_completion' } : unusableDate(fact.unit_completion_date, 'unit_completion', 'missing_loss_completion_date');
+  if (variant.lossDate === 'root_commencement') return fact.root_commencement_date.parsed_date ? { date: fact.root_commencement_date, source: 'root_commencement' } : unusableDate(fact.root_commencement_date, 'root_commencement', 'missing_root_commencement_date');
   if (fact.unit_commencement_date.parsed_date) return { date: fact.unit_commencement_date, source: 'unit_commencement' };
   if (variant.lossFallback && fact.root_commencement_date.parsed_date) return { date: fact.root_commencement_date, source: 'root_commencement', fallback_reason: 'missing_unit_commencement' };
-  return { date: null, reason: 'missing_unit_commencement_date' };
+  return unusableDate(fact.unit_commencement_date, 'unit_commencement', 'missing_unit_commencement_date');
 }
+function unusableDate(date, source, reason) { return { date: null, source, reason, invalid: Boolean(date && date.date_status !== 'missing') }; }
 
 export function assemble(rows) {
   const summaries = new Map(), details = new Map();
@@ -121,13 +172,15 @@ function addSummary(map, authority, row) {
   const a = bucket.cube[row.affordability] ||= {}; const d = a[row.dwelling_type] ||= {}; add(d, row.inferred_use_class, row.units);
 }
 function add(object, key, value) { object[key] = (object[key] || 0) + value; }
-function exception(fact, reason) { return { source_row_key: fact.source_row_key, application_id: fact.application_id, reason }; }
+function exception(fact, reason) { return { source_row_key: fact.source_row_key, application_id: fact.application_id, authority: fact.lpa_name || 'Unallocated', change_type: fact.change_type || null, reason }; }
 function address(app) { return [app.site_name, app.site_number, app.street_name, app.secondary_street_name, app.locality, app.postcode].filter(Boolean).join(', ') || 'Address not recorded'; }
 function yearStart(year) { return Number(year.slice(0, 4)); }
 function target(year) { return year >= '2021/22' ? 52287 : 42388; }
-function affordability(tenure) { if (!tenure || /not known|unknown/i.test(tenure)) return 'Not known'; if (/not applicable|n\/a/i.test(tenure)) return 'n/a'; return /affordable|social|shared|living rent|intermediate/i.test(tenure) ? 'Affordable' : /market/i.test(tenure) ? 'Market' : String(tenure); }
-function dwellingType(value) { const type = String(value || '').trim(); if (!type) return 'Other'; if (/^hmo$/i.test(type)) return 'C4 small HMO'; if (/^flat apartment maisonette$/i.test(type)) return 'Flat Apartment Maisonette'; if (/^studio bedsit$/i.test(type)) return 'Studio Bedsit'; if (/^house$/i.test(type)) return 'House or Bungalow'; return type; }
-function inferredUseClass(value) { const type = String(value || ''); if (/C4|HMO/i.test(type)) return 'C4 small HMO'; if (/student|co living|communal|other/i.test(type)) return 'Other residential'; return type ? 'C3 dwelling' : 'Not known'; }
+function affordability(tenure) { return classify(tenure, CATEGORY_RULES.affordability, tenure ? String(tenure) : 'Not known'); }
+function dwellingType(value) { return classify(value, CATEGORY_RULES.dwelling_type, value ? String(value).trim() : 'Other', true); }
+function inferredUseClass(unitType, developmentType) { const unit = String(unitType || '').trim(); const combined = [unit, developmentType].filter(Boolean).join(' '); for (const rule of CATEGORY_RULES.use_class) { const subject = rule.evidence === 'unit_type' ? unit : combined; if (new RegExp(rule.pattern, 'i').test(subject)) return rule.label; } return combined ? 'Other residential' : 'Not known'; }
+function classify(value, rules, fallback, exact = false) { const text = String(value || '').trim(); for (const rule of rules) { if (exact ? text.toLowerCase() === rule.exact : new RegExp(rule.pattern, 'i').test(text)) return rule.label; } return fallback; }
 function supersessionStatus(fact) { return fact.superseded_date_raw || fact.superseded_by_lpa_app_no || fact.application_superseding_details.length ? 'flagged' : 'not_flagged'; }
+function nullable(value) { return value === null || value === undefined || String(value).trim() === '' ? null : String(value); }
 function compareSummary(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority); }
 function compareDetail(a, b) { return a.year.localeCompare(b.year) || a.authority.localeCompare(b.authority) || a.application_id.localeCompare(b.application_id) || a.source_row_key.localeCompare(b.source_row_key); }

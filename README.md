@@ -26,7 +26,7 @@ Then open `http://localhost:4173`. All filtering and chart updates use checked-i
 
 ## Rebuild the snapshot
 
-`build:data` queries each financial year separately. With no environment overrides it requests 2004/05 through the most recently completed financial year:
+`build:data` captures one PLD scroll snapshot, then applies every reporting-date variant to the same normalised facts. With no environment overrides it reports 2004/05 through the most recently completed financial year:
 
 ```sh
 npm run build:data
@@ -37,7 +37,7 @@ npm run validate:data
 
 The repository paths are `site/data/index.json` and `site/data/years/*.json`. The browser initially downloads the summary index and loads detail files only when the underlying-data panel is opened.
 
-The validator checks the schema version, continuous year coverage, shard inventory and size, required fields, duplicate address groups, summary cubes, address-group totals and London totals. It also prints several historical reference comparisons. Those comparisons are informational because the former GLA methodology has not yet been reproduced; they are not release gates.
+The validator checks canonical application-ID reconciliation, complete fact dispositions, schema version and required structure, continuous year coverage, shard inventory and size, required fields, summary cubes, detail totals and London totals. The build also writes a reconciliation ledger for all variants and supersession diagnostics. Historical reference comparisons remain informational because the former GLA methodology has not yet been reproduced; they are not release gates.
 
 ## Publication architecture
 

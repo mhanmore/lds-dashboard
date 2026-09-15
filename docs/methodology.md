@@ -8,14 +8,14 @@ Source data: Greater London Authority, Planning London Datahub. The GLA cannot w
 
 ## Source and snapshot process
 
-The rebuild loader uses a strict pipeline: it extracts one dated, immutable PLD application snapshot; validates the observed source shape; normalises conventional residential-unit facts; then applies named reporting-date variants. By default `npm run build:data` writes development artefacts under `build/pld`, never over the published `site/data` directory. The snapshot manifest records counts, versions and a checksum for the raw NDJSON input.
+The rebuild loader uses a strict pipeline: it extracts one dated, immutable PLD application snapshot; validates the observed source shape; normalises conventional residential-unit facts; then applies named reporting-date variants. By default `npm run build:data` writes development artefacts under `build/pld`, never over the published `site/data` directory. The snapshot manifest records counts, versions and a checksum for the raw NDJSON input. Application identity is canonicalised from PLD/source `id` (falling back to Elasticsearch `_id` only when necessary); both source identifiers and the LPA reference are retained, and disagreements are reported. A `source_row_key` is snapshot-only reconstruction identity, not a stable longitudinal PLD unit identifier.
 
 The generated static artifact consists of:
 
 - `site/data/index.json`, containing metadata, the shard inventory and authority-year summary cubes; and
 - `site/data/years/*.json`, containing address-grouped detail rows for individual financial years.
 
-Each development variant records its snapshot ID, schema version, methodology ID/version, category-mapping version and supersession policy. The browser continues to read only the separately published local files; it never queries PLD when a filter or chart changes.
+Each development variant records its snapshot ID, schema version, methodology ID/version, category-mapping version and supersession policy. It also emits one terminal disposition for every normalised fact, supersession diagnostics (including an explicitly informational “excluding flagged” alternative), and a common-snapshot reconciliation ledger. The browser continues to read only the separately published local files; it never queries PLD when a filter or chart changes.
 
 The intended production arrangement is an external weekly VPS job which pulls the repository, builds and validates a temporary snapshot, replaces `site/data` only after validation succeeds, and pushes the result. GitHub Pages then republishes the static site. That external schedule and credential are not part of this repository and must be configured separately.
 
@@ -36,7 +36,7 @@ Affordability is inferred from the source unit's tenure text:
 - unknown and not-applicable values remain explicit; and
 - other tenure labels are retained as supplied.
 
-Unit types are lightly normalised for display. The use-class field is not supplied by PLD: it is inferred from unit type. HMO-like records are grouped as `C4 small HMO`, ordinary identified dwelling types as `C3 dwelling`, and student, co-living, communal and other types as `Other residential`. This inference is convenient for exploration but is not a planning use-class determination.
+Unit types are lightly normalised for display. The use-class field is not supplied by PLD. Only explicit HMO/C4-like values and a small documented list of unambiguous dwelling labels are mapped; student, co-living and communal values are `Other residential`, as are populated values that do not support a planning use-class inference. Missing values remain `Not known`. This inference is convenient for exploration but is not a planning use-class determination.
 
 ## Aggregation and dashboard behaviour
 
