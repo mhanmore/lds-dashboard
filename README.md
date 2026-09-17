@@ -14,6 +14,10 @@ Source data: Greater London Authority, Planning London Datahub (PLD). The GLA ca
 
 The current measure covers self-contained records from the PLD `residential_units` collection. It excludes non-conventional accommodation and does not implement the complete London Plan housing-supply measure. See [the methodology](docs/methodology.md) and [validation status](docs/validation-benchmarks.md) before interpreting the results.
 
+## A note on the underlying data shape
+
+PLD contains a recurring pattern worth knowing about before building on this data: some applications carry hundreds or thousands of unit records that share one identical date sitting at a month- or financial-year-end boundary, with no per-unit completion date recorded. Cross-checking against source-data traces, this looks like real completions that a monitoring officer batch-recorded onto an administrative closing date when the true per-unit dates weren't available, rather than fabricated or duplicated units. It's not confined to one borough or year — it recurs across most London authorities over the full 2004–present window. The practical effect is that a single authority's single-year completions figure can be dominated by one such batch, so year-by-year, borough-by-borough readings should be treated cautiously until this project adds explicit flagging for it (tracked in [spec.md §9](spec.md#9-known-limitations-and-remaining-work)); multi-year or London-wide aggregates are less exposed to this effect than any one authority-year cell.
+
 ## Run locally
 
 The project has no third-party npm dependencies. It requires a current Node.js release for the data scripts and Python 3 for the convenience development server.

@@ -3,7 +3,27 @@
     "allow": [
       "Bash(mkdir -p /Users/mh/temp/house-completions/site/rbkc /Users/mh/temp/house-completions/site/lhbf)",
       "Bash(node -c /Users/mh/temp/house-completions/site/rbkc/index.html)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "WebFetch(domain:web.archive.org)",
+      "Bash(curl -s \"https://api.github.com/repos/mhanmore/lds-dashboard/contents/\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/mhanmore/lds-dashboard/main/README.md\")",
+      "Bash(curl -s \"https://api.github.com/repos/mhanmore/lds-dashboard/contents/docs\")",
+      "Bash(curl -s \"http://web.archive.org/cdx/search/cdx?url=data.london.gov.uk/dataset/residential-completions-dashboard-e196j*&output=json&collapse=timestamp:8&limit=50\")",
+      "Bash(curl -s \"http://web.archive.org/cdx/search/cdx?url=data.london.gov.uk/*residential-completions*&output=json&collapse=urlkey&limit=100&matchType=prefix\")",
+      "WebFetch(domain:www.ons.gov.uk)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/jgleeson/housing_analysis/master/AMR_tables.md\")",
+      "Bash(tee /Users/mh/temp/house-completions/build/audit/kc/duplicates.txt)",
+      "Bash(grep -E '\\\\.\\(ndjson|json|txt|md\\)$')",
+      "Bash(node build/audit/full-sweep/sweep.js)",
+      "Bash(node build/audit/full-sweep/sweep.cjs)",
+      "Bash(node build/audit/full-sweep/process.cjs)",
+      "Bash(node -e ' *)",
+      "Bash(node build/audit/full-sweep/analyze.cjs)",
+      "Bash(node build/audit/full-sweep/analyze2.cjs)",
+      "Bash(node build/audit/full-sweep/generate-findings.cjs)",
+      "Bash(node /Users/mh/temp/house-completions/build/audit/full-sweep-v2/sweep2.js)",
+      "Bash(node /Users/mh/temp/house-completions/build/audit/full-sweep-v2/sweep2.cjs)"
     ],
     "additionalDirectories": [
       "/Users/mh/temp/house-completions/site"
