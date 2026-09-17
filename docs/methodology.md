@@ -44,7 +44,11 @@ Annual summaries are grouped by authority and financial year and retain a three-
 
 Detail rows are grouped by address text, authority, financial year, affordability, unit type and inferred use class. They are not application-level records and contain no stable planning-application identifier. Separate developments with identical grouping values may therefore be combined, while one development may appear in several rows. Groups with a net value of zero are omitted.
 
-The dashboard's “affordable share” is the net affordable count divided by the overall net count for the selected filters. Losses and unknown tenure categories can affect that ratio.
+The borough pages compare dwelling counts with an indicative 35% affordable share benchmark. They show two measures. “Net share” divides signed net affordable dwellings by all signed net dwellings; annual values are omitted when total net delivery is non-positive. “Positive completions only” divides positive affordable records by all positive completion records, avoiding the denominator effect created by losses. The period charts aggregate the underlying counts before calculating each percentage. These are dwelling counts rather than habitable-room counts, so the comparison is approximate.
+
+Flagged years use two disclosed rules. A “loss effect” flag appears when the annual measures differ by at least 15 percentage points or net delivery is non-positive. A “major scheme” flag appears when one address group contributes at least 50 affordable dwellings and at least half of the year’s positive affordable delivery. Because detail rows are grouped by address and classification rather than planning application, this identifies concentration at an address group rather than proving that the contribution came from one planning permission.
+
+The reconstructed affordability mapping combines social and intermediate tenures into a single `Affordable` group. It cannot measure the 60/40 social/intermediate split. The borough pages state that benchmark as context and do not present an inferred split. The underlying source records retain only the combined category in the published artifact.
 
 London-wide annual target references are hard-coded as 42,388 before 2021/22 and 52,287 from 2021/22. They are shown only for an unfiltered All London selection. They are contextual reference values, not a borough target series or a statutory assessment, and the numerator excludes non-conventional supply.
 

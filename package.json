@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "python3 -m http.server 4173 -d site",
     "build:data": "node scripts/build-data.mjs",
+    "build:borough-affordability": "node scripts/build-borough-affordability.mjs",
     "capture:baseline": "node scripts/capture-baseline.mjs",
     "validate:data": "node scripts/validate-data.mjs",
     "test:rebuild": "node test/rebuild.test.mjs",

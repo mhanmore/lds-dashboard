@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /Users/mh/temp/house-completions/site/rbkc /Users/mh/temp/house-completions/site/lhbf)",
+      "Bash(node -c /Users/mh/temp/house-completions/site/rbkc/index.html)",
+      "Bash(git commit -m ' *)"
+    ],
+    "additionalDirectories": [
+      "/Users/mh/temp/house-completions/site"
+    ]
+  }
+}
