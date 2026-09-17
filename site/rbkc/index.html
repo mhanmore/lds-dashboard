@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Affordable housing delivery analysis for Kensington & Chelsea.">
+  <title>Kensington & Chelsea - Affordable Housing Delivery</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    .borough-title {
+      color: #007f5f;
+      font-size: 2rem;
+    }
+    .borough-code {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+    .metric-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      text-align: center;
+    }
+    .metric-label {
+      font-size: 0.875rem;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #007f5f;
+    }
+    .metric-subtext {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-top: 0.5rem;
+    }
+    .chart-container {
+      margin: 2rem 0;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+    }
+    .chart-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      color: #111827;
+    }
+    canvas {
+      max-width: 100%;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 2rem 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th, td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #111827;
+    }
+    tr:hover {
+      background: #f9fafb;
+    }
+    .positive {
+      color: #059669;
+    }
+    .negative {
+      color: #dc2626;
+    }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      color: #007f5f;
+      text-decoration: none;
+      font-size: 0.875rem;
+    }
+    .back-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href=".."><span class="brand-mark"><i></i><i></i><i></i></span><span>London completions explorer<small>Borough analysis</small></span></a>
+      <div class="header-meta"><span id="updated">Data unavailable</span></div>
+    </div>
+  </header>
+  <main class="shell workspace">
+    <a href=".." class="back-link">← Back to main dashboard</a>
+
+    <section class="dashboard-heading">
+      <div><p class="eyebrow">Borough analysis</p><h1>Kensington & Chelsea <span class="borough-code">RBKC</span></h1></div>
+      <p>Annual affordable housing delivery statistics for Kensington & Chelsea, 2004/05–2025/26.</p>
+    </section>
+
+    <aside class="publication-note" aria-label="Important information about the data">
+      <strong>Independent experimental reconstruction—not official GLA statistics.</strong>
+      <span>This analysis is based on reconstructed completions data. <a href="../methodology.html">Read the methodology and limitations.</a></span>
+      <button type="button" class="publication-note-close" aria-label="Close publication notice">×</button>
+    </aside>
+
+    <section class="metrics-grid">
+      <article class="metric-card">
+        <div class="metric-label">Total completions</div>
+        <div class="metric-value" id="total-completions">—</div>
+        <div class="metric-subtext">All years</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Affordable units</div>
+        <div class="metric-value" id="total-affordable">—</div>
+        <div class="metric-subtext">All years</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Affordable share</div>
+        <div class="metric-value" id="affordable-share">—</div>
+        <div class="metric-subtext">Proportion</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Latest year completions</div>
+        <div class="metric-value" id="latest-year-completions">—</div>
+        <div class="metric-subtext" id="latest-year-label">2025/26</div>
+      </article>
+    </section>
+
+    <section class="chart-container">
+      <div class="chart-title">Annual Completions & Affordable Proportion</div>
+      <canvas id="proportion-chart"></canvas>
+    </section>
+
+    <section class="chart-container">
+      <div class="chart-title">Stacked Annual Completions by Affordability</div>
+      <canvas id="stacked-chart"></canvas>
+    </section>
+
+    <section class="chart-container">
+      <div class="chart-title">Completions by Dwelling Type (All Years)</div>
+      <canvas id="dwelling-chart"></canvas>
+    </section>
+
+    <section class="chart-container">
+      <div class="chart-title">Completions by Affordability & Tenure</div>
+      <canvas id="tenure-chart"></canvas>
+    </section>
+
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Year</th>
+            <th>Net completions</th>
+            <th>Affordable</th>
+            <th>Market</th>
+            <th>Unknown</th>
+            <th>% Affordable</th>
+          </tr>
+        </thead>
+        <tbody id="annual-table">
+          <tr><td colspan="6">Loading data…</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer><span>Source data: Greater London Authority, Planning London Datahub.</span><span><a href="../methodology.html">Project methodology</a></span></footer>
+  </main>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <script type="module">
+    const $ = id => document.getElementById(id);
+    const fmt = number => new Intl.NumberFormat('en-GB').format(Math.round(number));
+    const AUTHORITY = 'Kensington & Chelsea';
+    let dataset = null;
+    let authorityData = [];
+
+    document.querySelector('.publication-note-close')?.addEventListener('click', event => {
+      event.currentTarget.closest('.publication-note').hidden = true;
+    });
+
+    async function load() {
+      try {
+        const response = await fetch('../data/index.json');
+        if (!response.ok) throw Error('Data unavailable');
+        dataset = await response.json();
+        $('updated').textContent = `Snapshot ${new Date(dataset.metadata.generated_at).toLocaleDateString('en-GB')}`;
+      } catch (e) {
+        $('updated').textContent = 'Data unavailable';
+        return;
+      }
+
+      // Extract data for this authority
+      authorityData = dataset.annual_summary
+        .filter(row => row.authority === AUTHORITY)
+        .sort((a, b) => a.year.localeCompare(b.year));
+
+      if (authorityData.length === 0) {
+        document.querySelector('.workspace').innerHTML += '<p style="color: red;">No data found for ' + AUTHORITY + '</p>';
+        return;
+      }
+
+      renderMetrics();
+      renderCharts();
+      renderTable();
+    }
+
+    function renderMetrics() {
+      const totalCompletions = authorityData.reduce((sum, row) => sum + (row.completions || 0), 0);
+      const totalAffordable = authorityData.reduce((sum, row) => {
+        const aff = row.affordability?.Affordable || 0;
+        return sum + aff;
+      }, 0);
+      const latest = authorityData[authorityData.length - 1];
+
+      $('total-completions').textContent = fmt(totalCompletions);
+      $('total-affordable').textContent = fmt(totalAffordable);
+      $('affordable-share').textContent = totalCompletions ? `${(totalAffordable / totalCompletions * 100).toFixed(1)}%` : '—';
+      $('latest-year-completions').textContent = latest ? fmt(latest.completions) : '—';
+      if (latest) {
+        $('latest-year-label').textContent = latest.year;
+      }
+    }
+
+    function renderCharts() {
+      renderProportionChart();
+      renderStackedChart();
+      renderDwellingChart();
+      renderTenureChart();
+    }
+
+    function renderProportionChart() {
+      const ctx = $('proportion-chart').getContext('2d');
+      const labels = authorityData.map(row => row.year.replace('20', ''));
+      const completions = authorityData.map(row => row.completions || 0);
+      const affordable = authorityData.map(row => row.affordability?.Affordable || 0);
+      const proportions = completions.map((c, i) => c ? (affordable[i] / c * 100) : 0);
+
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Affordable %',
+              data: proportions,
+              borderColor: '#007f5f',
+              backgroundColor: 'rgba(0, 127, 95, 0.1)',
+              borderWidth: 2,
+              fill: true,
+              yAxisID: 'y',
+              tension: 0.4,
+              pointRadius: 4,
+              pointBackgroundColor: '#007f5f',
+              pointBorderColor: '#fff',
+              pointBorderWidth: 2
+            },
+            {
+              label: 'Annual completions',
+              data: completions,
+              borderColor: '#f0a202',
+              backgroundColor: 'rgba(240, 162, 2, 0.05)',
+              borderWidth: 2,
+              yAxisID: 'y1',
+              tension: 0.4,
+              pointRadius: 3,
+              pointBackgroundColor: '#f0a202'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              position: 'top'
+            }
+          },
+          scales: {
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+              title: {
+                display: true,
+                text: 'Proportion affordable (%)'
+              },
+              min: 0,
+              max: 100
+            },
+            y1: {
+              type: 'linear',
+              display: true,
+              position: 'right',
+              title: {
+                display: true,
+                text: 'Annual completions'
+              },
+              grid: {
+                drawOnChartArea: false
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderStackedChart() {
+      const ctx = $('stacked-chart').getContext('2d');
+      const labels = authorityData.map(row => row.year.replace('20', ''));
+      const market = authorityData.map(row => row.affordability?.Market || 0);
+      const affordable = authorityData.map(row => row.affordability?.Affordable || 0);
+      const unknown = authorityData.map(row => row.affordability?.['Not known'] || 0);
+
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Affordable',
+              data: affordable,
+              backgroundColor: '#007f5f'
+            },
+            {
+              label: 'Market',
+              data: market,
+              backgroundColor: '#f0a202'
+            },
+            {
+              label: 'Unknown',
+              data: unknown,
+              backgroundColor: '#d1d5db'
+            }
+          ]
+        },
+        options: {
+          indexAxis: 'x',
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'top'
+            }
+          },
+          scales: {
+            x: {
+              stacked: true
+            },
+            y: {
+              stacked: true,
+              title: {
+                display: true,
+                text: 'Units'
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderDwellingChart() {
+      const ctx = $('dwelling-chart').getContext('2d');
+      const dwellingTotals = {};
+      authorityData.forEach(row => {
+        Object.entries(row.dwelling_type || {}).forEach(([type, value]) => {
+          dwellingTotals[type] = (dwellingTotals[type] || 0) + value;
+        });
+      });
+
+      const sorted = Object.entries(dwellingTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8);
+
+      const colours = ['#007f5f', '#f0a202', '#dc2f72', '#5271ff', '#6f4e9c', '#00a6a6', '#8a9a5b', '#6b7280'];
+
+      new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: sorted.map(([name]) => name),
+          datasets: [{
+            data: sorted.map(([, value]) => value),
+            backgroundColor: colours
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'right'
+            }
+          }
+        }
+      });
+    }
+
+    function renderTenureChart() {
+      const ctx = $('tenure-chart').getContext('2d');
+      const labels = authorityData.map(row => row.year.replace('20', ''));
+
+      // Aggregate by use class
+      const useClassByYear = authorityData.map(row => row.use_class || {});
+      const allClasses = [...new Set(authorityData.flatMap(row => Object.keys(row.use_class || {})))];
+
+      const datasets = allClasses.slice(0, 5).map((useClass, idx) => {
+        const colours = ['#007f5f', '#f0a202', '#dc2f72', '#5271ff', '#6f4e9c'];
+        return {
+          label: useClass,
+          data: useClassByYear.map(row => row[useClass] || 0),
+          borderColor: colours[idx % colours.length],
+          backgroundColor: colours[idx % colours.length] + '20',
+          borderWidth: 2,
+          tension: 0.4,
+          fill: true
+        };
+      });
+
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'top'
+            }
+          },
+          scales: {
+            y: {
+              stacked: false,
+              title: {
+                display: true,
+                text: 'Units'
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderTable() {
+      const rows = authorityData.map(row => {
+        const total = row.completions || 0;
+        const aff = row.affordability?.Affordable || 0;
+        const mkt = row.affordability?.Market || 0;
+        const unk = row.affordability?.['Not known'] || 0;
+        const pct = total ? (aff / total * 100).toFixed(1) : '—';
+
+        return `<tr>
+          <td>${row.year}</td>
+          <td>${fmt(total)}</td>
+          <td class="positive">${fmt(aff)}</td>
+          <td>${fmt(mkt)}</td>
+          <td>${fmt(unk)}</td>
+          <td>${pct}%</td>
+        </tr>`;
+      }).join('');
+
+      $('annual-table').innerHTML = rows;
+    }
+
+    load();
+  </script>
+</body>
+</html>
