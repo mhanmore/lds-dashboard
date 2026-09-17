@@ -37,14 +37,6 @@
       <button id="clear" class="button secondary" type="button">Reset</button>
     </section>
 
-    <section class="borough-nav" style="margin: 2rem 0; padding: 1.5rem; background: #f9fafb; border-radius: 0.5rem; border: 1px solid #e5e7eb;">
-      <p style="margin: 0 0 1rem 0; font-size: 0.875rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">Borough affordability analysis</p>
-      <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-        <a href="rbkc/" style="padding: 0.75rem 1.5rem; background: #007f5f; color: white; text-decoration: none; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">Kensington & Chelsea (RBKC)</a>
-        <a href="lhbf/" style="padding: 0.75rem 1.5rem; background: #007f5f; color: white; text-decoration: none; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">Hammersmith & Fulham (LHBF)</a>
-      </div>
-    </section>
-
     <section class="metrics" aria-label="Summary">
       <article><span>Net completions</span><strong id="total">—</strong><small id="period">Selected period</small></article>
       <article><span>Latest year</span><strong id="latest">—</strong><small id="latest-year">Financial year</small></article>
@@ -81,6 +73,13 @@
         <div class="panel-heading"><div><p class="eyebrow">Values</p><h2>Annual summary</h2></div><small id="annual-caption"></small></div>
         <div class="table-wrap compact-table"><table><thead><tr><th>Year</th><th>Net</th><th>Affordable</th><th>Market</th><th>Target</th><th>% target</th></tr></thead><tbody id="annual-values"></tbody></table></div>
       </article>
+    </section>
+
+    <section class="borough-nav" style="margin: 2rem 0; padding: 1.5rem; background: #f9fafb; border-radius: 0.5rem; border: 1px solid #e5e7eb;">
+      <p style="margin: 0 0 1rem 0; font-size: 0.875rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">Borough affordability analysis</p>
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <a href="rbkc/" style="padding: 0.75rem 1.5rem; background: #007f5f; color: white; text-decoration: none; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">Kensington & Chelsea (RBKC)</a>
+      </div>
     </section>
 
     <details id="records-panel" class="panel records-panel">
